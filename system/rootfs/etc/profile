@@ -1,0 +1,11 @@
+# MIMIKI - System-wide profile
+# /etc/profile
+
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+export HOME=/root
+export PS1='\u@\h:\w\$ '
+export TERM=linux
+
+# GPU configuration
+export SDL_VIDEODRIVER=kmsdrm
+export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/rk_vk.json

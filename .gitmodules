@@ -1,0 +1,63 @@
+[submodule "external/rocknix/rocknix-joypad"]
+	path = external/rocknix/rocknix-joypad
+	url = https://github.com/ROCKNIX/rocknix-joypad.git
+[submodule "external/rocknix/mali_kbase"]
+	path = external/rocknix/mali_kbase
+	url = https://github.com/ROCKNIX/mali_kbase.git
+[submodule "external/linux"]
+	path = external/boot/linux
+	url = https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
+	tag = v6.18.9
+[submodule "external/u-boot"]
+	path = external/boot/u-boot
+	url = https://github.com/u-boot/u-boot.git
+[submodule "external/rkbin"]
+	path = external/boot/rkbin
+	url = https://github.com/rockchip-linux/rkbin.git
+[submodule "external/mupen64plus/core"]
+	path = external/emulators/mupen64plus/core
+	url = https://github.com/mupen64plus/mupen64plus-core.git
+[submodule "external/mupen64plus/input-sdl"]
+	path = external/emulators/mupen64plus/input-sdl
+	url = https://github.com/mupen64plus/mupen64plus-input-sdl.git
+[submodule "external/mupen64plus/ui-console"]
+	path = external/emulators/mupen64plus/ui-console
+	url = https://github.com/mupen64plus/mupen64plus-ui-console.git
+[submodule "external/mupen64plus/audio-sdl"]
+	path = external/emulators/mupen64plus/audio-sdl
+	url = https://github.com/mupen64plus/mupen64plus-audio-sdl.git
+[submodule "external/duckstation"]
+	path = external/emulators/duckstation
+	url = https://github.com/stenzek/duckstation.git
+[submodule "external/flycast"]
+	path = external/emulators/flycast
+	url = https://github.com/flyinghead/flycast.git
+[submodule "external/ppsspp"]
+	path = external/emulators/ppsspp
+	url = https://github.com/hrydgard/ppsspp.git
+[submodule "external/tools/busybox"]
+	path = external/tools/busybox
+	url = https://github.com/mirror/busybox.git
+[submodule "external/tools/exfatprogs"]
+	path = external/tools/exfatprogs
+	url = https://github.com/exfatprogs/exfatprogs.git
+[submodule "external/tools/SDL2"]
+	path = external/tools/SDL2
+	url = https://github.com/libsdl-org/SDL.git
+	branch = SDL2
+[submodule "external/tools/SDL2_image"]
+	path = external/tools/SDL2_image
+	url = https://github.com/libsdl-org/SDL_image.git
+	branch = SDL2
+[submodule "external/tools/gptfdisk"]
+	path = external/tools/gptfdisk
+	url = https://github.com/samangh/gptfdisk.git
+[submodule "external/tools/alsa-utils"]
+	path = external/tools/alsa-utils
+	url = https://github.com/alsa-project/alsa-utils.git
+[submodule "external/emulators/mupen64plus/rsp-hle"]
+	path = external/emulators/mupen64plus/rsp-hle
+	url = https://github.com/mupen64plus/mupen64plus-rsp-hle.git
+[submodule "external/emulators/mupen64plus/video-gliden64"]
+	path = external/emulators/mupen64plus/video-gliden64
+	url = https://github.com/gonetz/GLideN64.git

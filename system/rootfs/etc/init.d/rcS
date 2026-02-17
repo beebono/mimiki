@@ -1,0 +1,27 @@
+#!/bin/sh
+# MIMIKI - System initialization script
+
+echo "MIMIKI starting..."
+
+echo "Loading kernel modules..."
+/sbin/depmod -a
+echo "  Loading display driver..."
+/sbin/modprobe panel-generic-dsi || echo "Warning: Display driver failed to load"
+echo "  Loading input driver..."
+/sbin/modprobe rocknix-singleadc-joypad || echo "Warning: Joypad driver failed to load"
+echo "  Loading mali gpu driver..."
+/sbin/modprobe mali_kbase || echo "Warning: Mali GPU driver failed to load"
+
+echo "Setting up audio..."
+amixer -c 0 sset 'Master' unmute 100%
+amixer -c 0 cset name='Playback Mux' SPK
+
+if [ -b "/dev/mmcblk2p1" ]; then
+    echo "Mounting second SD Card..."
+    mount /dev/mmcblk2p1 /mnt/games2
+    if [ $? -ne 0 ]; then
+        echo "Failed to mount second SD Card! Make sure it's formatted as fat32 or exfat!"
+    fi
+fi
+
+echo "==> MIMIKI init complete!"

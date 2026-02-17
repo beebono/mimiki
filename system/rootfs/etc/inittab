@@ -1,0 +1,14 @@
+# MIMIKI - Busybox inittab
+# /etc/inittab: init(8) configuration for busybox
+
+# Bring it up
+::sysinit:/etc/init.d/rcS
+
+# Keep launcher alive (via cage Wayland compositor)
+::respawn:/bin/sh -l -c "/usr/bin/mimiki-launcher"
+
+# 3-finger salute
+::ctrlaltdel:/sbin/reboot
+
+# Break it down
+::shutdown:/etc/init.d/rcK

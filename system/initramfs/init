@@ -1,0 +1,124 @@
+#!/bin/sh
+# Minimal GAMES parition detect/create and switch_root
+
+# Set up PATH for busybox utilities
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+
+DEVICE="/dev/mmcblk1"
+ROOT_DEVICE="${DEVICE}p4"
+PART_DEVICE="${DEVICE}p5"
+
+switch_to_mimiki() {
+    echo "Mounting root filesystem..."
+    mount "$ROOT_DEVICE" /newroot
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to mount root filesystem at $ROOT_DEVICE"
+        exit # Emergency shell not useful on this device, just panic!
+    fi
+
+    mount --move /dev /newroot/dev
+    mount --move /dev/pts /newroot/dev/pts
+    mount --move /mnt/games /newroot/mnt/games
+    mount --move /proc /newroot/proc
+    mount --move /run /newroot/run
+    mount --move /sys /newroot/sys
+    mount --move /tmp /newroot/tmp
+
+    echo "Switching to MIMIKI root..."
+    exec switch_root -c /dev/tty0 /newroot /sbin/init
+}
+
+# Make dirs for and mount essential filesystems
+mkdir -p /dev /mnt/games /newroot /tmp
+mount -t proc proc /proc
+mount -t tmpfs none /run
+mount -t sysfs sysfs /sys
+mount -t tmpfs -o size=64m,mode=1777 tmpfs /tmp
+mount -t devtmpfs devtmpfs /dev
+mkdir -p /dev/pts
+mount -t devpts devpts /dev/pts
+
+# Create essential device nodes if they don't exist
+[ -e /dev/null ] || mknod -m 666 /dev/null c 1 3
+[ -e /dev/zero ] || mknod -m 666 /dev/zero c 1 5
+[ -e /dev/console ] || mknod -m 600 /dev/console c 5 1
+
+DEV_CHECKS=0
+while [ ! -b "$DEVICE" ]; do
+    DEV_CHECKS=$((DEV_CHECKS + 1))
+    if [ $DEV_CHECKS -gt 50 ]; then
+        echo "$DEVICE didn't appear after 5 seconds, attempting switch to MIMIKI anyway..."
+        switch_to_mimiki
+    fi
+    sleep 0.1
+done
+
+if blkid -s TYPE -o value "$PART_DEVICE" 2>/dev/null | grep -q .; then
+    echo "Main GAMES partition already set up, let's go!"
+    mount "$PART_DEVICE" /mnt/games
+    switch_to_mimiki
+fi
+
+echo "Creating GAMES partition..."
+# Extend table
+sgdisk -e "$DEVICE"
+# Create maximum new partition 5
+sgdisk -N 5 "$DEVICE"
+
+# Let the device settle
+sleep 0.2
+partprobe "$DEVICE"
+
+PART_CHECKS=0
+while [ ! -b "$PART_DEVICE" ]; do
+    PART_CHECKS=$((PART_CHECKS + 1))
+    if [ $PART_CHECKS -eq 50 ]; then
+        echo "$PART_DEVICE didn't appear after 5 seconds, attempting switch to MIMIKI anyway..."
+        switch_to_mimiki
+    fi
+    sleep 0.1
+done
+
+echo "Formatting GAMES partition as exFAT..."
+mkfs.exfat -n GAMES "$PART_DEVICE"
+if [ $? -ne 0 ]; then
+    echo "Error: Failed to format partition, attempting switch to MIMIKI anyway..."
+    switch_to_mimiki
+fi
+
+echo "Mounting and populating GAMES partition..."
+mkdir -p /mnt/games
+mount "$PART_DEVICE" /mnt/games
+if [ $? -eq 0 ]; then
+    echo "Creating game directories..."
+    mkdir -p /mnt/games/n64/saves
+    mkdir -p /mnt/games/n64/states
+    mkdir -p /mnt/games/dreamcast/bios
+    mkdir -p /mnt/games/dreamcast/saves
+    mkdir -p /mnt/games/ps1/bios
+    mkdir -p /mnt/games/ps1/saves
+    mkdir -p /mnt/games/psp/data
+
+    cat > /mnt/games/README.txt <<EOF
+MIMIKI - Game Storage
+
+Place your game ROMs in the appropriate directories:
+
+  /n64        - .z64, .n64, .v64
+  /dreamcast  - .chd, .gdi, .cdi
+  /ps1        - .chd, .pbp, .bin/.cue
+  /psp        - .chd, .cso, .iso
+
+The launcher will automatically scan these directories on boot.
+
+For more information: https://github.com/beebono/mimiki
+EOF
+
+    sync
+
+    echo "GAMES partition(s) ready! Switching to MIMIKI!"
+else
+    echo "Error: Could not mount GAMES partition, attempting switch to MIMIKI anyway..."
+fi
+
+switch_to_mimiki
