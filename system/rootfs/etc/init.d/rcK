@@ -3,14 +3,12 @@
 
 echo "MIMIKI shutting down..."
 
-# Kill all processes (attempt safely first)
+# Kill all processes
 killall5 -15
-sleep 1
-killall5 -9
 
 # Sync and unmount games so things don't break
 sync
 umount /mnt/games 2>/dev/null
 umount /mnt/games2 2>/dev/null
 
-echo "See you later!"
+echo "mata ne!"

@@ -8,4 +8,5 @@ export TERM=linux
 
 # GPU configuration
 export SDL_VIDEODRIVER=kmsdrm
+export SDL_RENDER_DRIVER=vulkan
 export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/rk_vk.json

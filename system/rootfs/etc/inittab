@@ -7,8 +7,5 @@
 # Keep launcher alive (via cage Wayland compositor)
 ::respawn:/bin/sh -l -c "/usr/bin/mimiki-launcher"
 
-# 3-finger salute
-::ctrlaltdel:/sbin/reboot
-
 # Break it down
 ::shutdown:/etc/init.d/rcK

@@ -27,6 +27,9 @@ RESERVE_SIZE_MB=8
 UBOOT_SIZE_MB=8
 BOOT_SIZE_MB=32
 ROOT_SIZE_MB=$(( ROOTFS_SIZE_BYTES / 1048576 ))
+if [ $ROOT_SIZE_MB -lt 32 ]; then
+    ROOT_SIZE_MB=32
+fi
 
 # Total Size (partition table padding at end)
 IMAGE_SIZE_MB=$((RESERVE_SIZE_MB + UBOOT_SIZE_MB + BOOT_SIZE_MB + ROOT_SIZE_MB + 2))
@@ -196,7 +199,7 @@ populate_boot_partition() {
     ls -lh "$BUILD_DIR/boot/Image"
     cp "$BUILD_DIR/boot/Image" "$mount_point/"
     cp "$BUILD_DIR/boot/rk3566-miyoo-flip.dtb" "$mount_point/"
-    cp "$BUILD_DIR/dt-overlays/rk3566-undervolt-cpu-l3.dtbo" "$mount_point/"
+    cp "$BUILD_DIR/dt-overlays"/* "$mount_point/"
 
     print_step "Creating EXTLINUX boot configuration..."
     mkdir -p "$mount_point/extlinux"
@@ -205,7 +208,7 @@ LABEL MIMIKI
   KERNEL /Image
   FDT /rk3566-miyoo-flip.dtb
   FDTOVERLAYS /rk3566-undervolt-cpu-l3.dtbo
-  APPEND console=ttyS2,1500000n8 rootwait quiet loglevel=0
+  APPEND rootwait quiet loglevel=0 fbcon=map:7
 EOF
 
     sync
@@ -250,7 +253,7 @@ main() {
     cleanup_loop_device "$loop_dev"
 
     # Chmod the build directory so it can be easily read or cleaned up later
-    chmod -R 777 "$BUILD_DIR"
+    chmod -R a+rw "$BUILD_DIR"
 
     print_step "SD card image created successfully!"
     echo "Output: $image_path"

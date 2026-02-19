@@ -1,7 +1,6 @@
 #!/bin/sh
 # Minimal GAMES parition detect/create and switch_root
 
-# Set up PATH for busybox utilities
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin
 
 DEVICE="/dev/mmcblk1"
@@ -13,7 +12,14 @@ switch_to_mimiki() {
     mount "$ROOT_DEVICE" /newroot
     if [ $? -ne 0 ]; then
         echo "Error: Failed to mount root filesystem at $ROOT_DEVICE"
-        exit # Emergency shell not useful on this device, just panic!
+        while (true); do
+            echo 1 > /sys/class/leds/red_led/brightness
+            echo 0 > /sys/class/leds/green_led/brightness
+            sleep 0.85
+            echo 0 > /sys/class/leds/red_led/brightness
+            echo 1 > /sys/class/leds/green_led/brightness
+            sleep 0.85
+        done
     fi
 
     mount --move /dev /newroot/dev
@@ -46,8 +52,8 @@ mount -t devpts devpts /dev/pts
 DEV_CHECKS=0
 while [ ! -b "$DEVICE" ]; do
     DEV_CHECKS=$((DEV_CHECKS + 1))
-    if [ $DEV_CHECKS -gt 50 ]; then
-        echo "$DEVICE didn't appear after 5 seconds, attempting switch to MIMIKI anyway..."
+    if [ $DEV_CHECKS -ge 100 ]; then
+        echo "$DEVICE didn't appear after 10 seconds, attempting switch to MIMIKI anyway..."
         switch_to_mimiki
     fi
     sleep 0.1
@@ -72,8 +78,8 @@ partprobe "$DEVICE"
 PART_CHECKS=0
 while [ ! -b "$PART_DEVICE" ]; do
     PART_CHECKS=$((PART_CHECKS + 1))
-    if [ $PART_CHECKS -eq 50 ]; then
-        echo "$PART_DEVICE didn't appear after 5 seconds, attempting switch to MIMIKI anyway..."
+    if [ $PART_CHECKS -eq 100 ]; then
+        echo "$PART_DEVICE didn't appear after 10 seconds, attempting switch to MIMIKI anyway..."
         switch_to_mimiki
     fi
     sleep 0.1
@@ -93,8 +99,8 @@ if [ $? -eq 0 ]; then
     echo "Creating game directories..."
     mkdir -p /mnt/games/n64/saves
     mkdir -p /mnt/games/n64/states
-    mkdir -p /mnt/games/dreamcast/bios
-    mkdir -p /mnt/games/dreamcast/saves
+    mkdir -p /mnt/games/dc/bios
+    mkdir -p /mnt/games/dc/saves
     mkdir -p /mnt/games/ps1/bios
     mkdir -p /mnt/games/ps1/saves
     mkdir -p /mnt/games/psp/data
@@ -104,11 +110,13 @@ MIMIKI - Game Storage
 
 Place your game ROMs in the appropriate directories:
 
-  /n64        - .z64, .n64, .v64
-  /dreamcast  - .chd, .gdi, .cdi
-  /ps1        - .chd, .pbp, .bin/.cue
-  /psp        - .chd, .cso, .iso
+  /n64   - .z64, .n64, .v64
+  /dc    - .chd, .gdi, .cdi       ! BIOS FILES REQUIRED UNDER /dc/bios
+  /ps1   - .chd, .pbp, .bin/.cue  ! BIOS FILES REQUIRED UNDER /ps1/bios
+  /psp   - .chd, .cso, .iso
 
+You can also make these same base folders on a second SD card
+formatted as either fat32 or exfat and place your games in there!
 The launcher will automatically scan these directories on boot.
 
 For more information: https://github.com/beebono/mimiki

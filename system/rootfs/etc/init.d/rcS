@@ -3,17 +3,20 @@
 
 echo "MIMIKI starting..."
 
+echo "Enabling deep sleep..."
+echo deep > /sys/power/mem_sleep
+
 echo "Loading kernel modules..."
-/sbin/depmod -a
+depmod -a
 echo "  Loading display driver..."
-/sbin/modprobe panel-generic-dsi || echo "Warning: Display driver failed to load"
+modprobe panel-generic-dsi || echo "Warning: Display driver failed to load"
 echo "  Loading input driver..."
-/sbin/modprobe rocknix-singleadc-joypad || echo "Warning: Joypad driver failed to load"
+modprobe rocknix-singleadc-joypad || echo "Warning: Joypad driver failed to load"
 echo "  Loading mali gpu driver..."
-/sbin/modprobe mali_kbase || echo "Warning: Mali GPU driver failed to load"
+modprobe mali_kbase || echo "Warning: Mali GPU driver failed to load"
 
 echo "Setting up audio..."
-amixer -c 0 sset 'Master' unmute 100%
+amixer -c 0 sset 'Master' unmute 70%
 amixer -c 0 cset name='Playback Mux' SPK
 
 if [ -b "/dev/mmcblk2p1" ]; then

@@ -118,7 +118,7 @@ clean-all: clean
 	@$(MAKE) -C external/emulators/mupen64plus/core/projects/unix clean || true
 	@$(MAKE) -C external/emulators/mupen64plus/audio-sdl/projects/unix APIDIR=. clean || true
 	@$(MAKE) -C external/emulators/mupen64plus/input-sdl/projects/unix APIDIR=. clean || true
-	@rm -r external/emulators/mupen64plus/rdp-parallel/build 2>/dev/null || true
-	@rm -r external/emulators/mupen64plus/rsp-parallel/build 2>/dev/null || true
+	@$(MAKE) -C external/emulators/mupen64plus/rsp-hle/projects/unix APIDIR=. clean || true
+	@rm -r external/emulators/mupen64plus/video-gliden64/build 2>/dev/null || true
 	@$(MAKE) -C external/emulators/mupen64plus/ui-console/projects/unix APIDIR=. clean || true
 	$(call MSG_SUCCESS,All clean!)

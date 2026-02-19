@@ -11,7 +11,7 @@ SRC_DIR := src
 BUILD_DIR := build
 
 # Compiler flags
-CFLAGS := -Wall -Wextra -O2 -std=c11
+CFLAGS := -Wall -Wextra -Wno-unused-result -O3 -flto=auto -std=c11
 CFLAGS += -I../../build/sdl2-install/usr/include
 CFLAGS += -I../../build/sdl2-install/usr/include/SDL2
 

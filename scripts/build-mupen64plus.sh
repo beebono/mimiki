@@ -127,7 +127,7 @@ build_core() {
         NEON=1 \
         VFP_HARD=1 \
         USE_GLES=1 \
-        VULKAN=0 \
+        VULKAN=1 \
         OSD=0 \
         NETPLAY=0 \
         NEW_DYNAREC=1 \
