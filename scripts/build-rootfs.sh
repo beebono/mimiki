@@ -66,7 +66,7 @@ populate_rootfs() {
     rm -rf "$ROOTFS_BUILD"
     mkdir -p "$ROOTFS_BUILD"
     # Create directory structure
-    mkdir -p "$ROOTFS_BUILD"/{bin,dev,etc,lib,root,mnt/games,mnt/games2,proc,run,sbin,sys,tmp,usr/bin,usr/lib,usr/share,usr/sbin,var}
+    mkdir -p "$ROOTFS_BUILD"/{bin,dev,dev/pts,dev/shm,etc,lib,root,mnt/games,mnt/games2,proc,run,sbin,sys,tmp,usr/bin,usr/lib,usr/share,usr/sbin,var}
 
     if [ -d "$ROOTFS_SKELETON" ]; then
         cp -a "$ROOTFS_SKELETON"/* "$ROOTFS_BUILD"/ 2>/dev/null || true
@@ -163,13 +163,11 @@ install_libraries() {
         print_warning "Custom SDL2 not found! Run 'make launcher' first."
     fi
 
-    # Additional libraries (Emulators)
-    # mupen64plus
-    cp -L "$SYSROOT/libpng16.so.16" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libpng16 not found"
+    # Additional libraries (RetroArch)
+    cp -L "$SYSROOT/libxkbcommon.so.0" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libxkbcommon not found"
     cp -L "$SYSROOT/libz.so.1" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libz not found"
-    # TODO: flycast
-    # TODO: duckstation
-    # TODO: ppsspp
+    cp -L "$SYSROOT/libmvec.so.1" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libmvec not found"
+    cp -L "$SYSROOT/libgomp.so.1" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libgomp not found"
 
     print_step "Libraries installed!"
 }
@@ -190,28 +188,22 @@ install_kernel_modules() {
     fi
 }
 
-install_emulators() {
-    print_step "Installing emulators..."
+install_retroarch() {
+    print_step "Installing RetroArch..."
 
-    if [ -d "$BUILD_DIR/emulators/mupen64plus" ]; then
-        mkdir -p "$ROOTFS_BUILD/root/.cache/mupen64plus"
-        mkdir -p "$ROOTFS_BUILD/root/.local/share/mupen64plus"
-        mkdir -p "$ROOTFS_BUILD/root/.config/mupen64plus/"{data,plugins}
-        cp -a "$BUILD_DIR/emulators/mupen64plus/bin/mupen64plus" \
+    if [ -d "$BUILD_DIR/retroarch" ]; then
+        cp -a "$BUILD_DIR/retroarch/bin/retroarch" \
             "$ROOTFS_BUILD/usr/bin/"
-        cp -a "$BUILD_DIR/emulators/mupen64plus/lib/libmupen64plus.so.2" \
+        cp -a "$BUILD_DIR/retroarch/lib"/* \
             "$ROOTFS_BUILD/usr/lib/"
-        cp -a "$BUILD_DIR/emulators/mupen64plus/lib/plugins"/* \
-            "$ROOTFS_BUILD/root/.config/mupen64plus/plugins/"
-        cp -a "$CONFIG_DIR/mupen64plus.cfg" \
-            "$ROOTFS_BUILD/root/.config/mupen64plus/"
-        cp -a "$CONFIG_DIR/InputAutoCfg.ini" \
-            "$ROOTFS_BUILD/root/.config/mupen64plus/data/"
-
-        print_step "mupen64plus installed!"
+        mkdir -p "$ROOTFS_BUILD/root/.config/retroarch"
+        cp -a "$CONFIG_DIR/retroarch.cfg" \
+            "$ROOTFS_BUILD/root/.config/retroarch/"
+        cp -a "$CONFIG_DIR/retroarch-core-options.cfg" \
+            "$ROOTFS_BUILD/root/.config/retroarch/"
     fi
 
-    print_step "Emulators installed!"
+    print_step "RetroArch installed!"
 }
 
 set_permissions() {
@@ -266,7 +258,7 @@ main() {
     install_busybox
     install_alsa
     install_launcher
-    install_emulators
+    install_retroarch
     set_permissions
     finalize_rootfs
     create_squashfs

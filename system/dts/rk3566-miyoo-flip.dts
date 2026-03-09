@@ -181,12 +181,12 @@
 		sw5 {
 				gpios = <&gpio3 RK_PC3 GPIO_ACTIVE_LOW>;
 				label = "GPIO KEY BTN-A";
-				linux,code = <BTN_SOUTH>;
+				linux,code = <BTN_EAST>;
 		};
 		sw6 {
 				gpios = <&gpio3 RK_PC2 GPIO_ACTIVE_LOW>;
 				label = "GPIO BTN-B";
-				linux,code = <BTN_EAST>;
+				linux,code = <BTN_SOUTH>;
 		};
 		sw7 {
 				gpios = <&gpio3 RK_PC0 GPIO_ACTIVE_LOW>;

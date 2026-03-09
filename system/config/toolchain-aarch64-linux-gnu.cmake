@@ -17,6 +17,7 @@ set(CMAKE_OBJDUMP ${CROSS_COMPILE}objdump CACHE FILEPATH "Objdump")
 set(CMAKE_FIND_ROOT_PATH
     /usr/aarch64-linux-gnu
     /usr/lib/aarch64-linux-gnu
+    /usr/include
 )
 
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)

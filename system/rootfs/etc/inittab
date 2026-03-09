@@ -4,8 +4,8 @@
 # Bring it up
 ::sysinit:/etc/init.d/rcS
 
-# Keep launcher alive (via cage Wayland compositor)
-::respawn:/bin/sh -l -c "/usr/bin/mimiki-launcher"
+# Keep launcher alive
+::respawn:/bin/sh -l -c "/usr/bin/mimiki-launcher 2>&1 | tee /mnt/games/data/mimiki.log"
 
 # Break it down
 ::shutdown:/etc/init.d/rcK

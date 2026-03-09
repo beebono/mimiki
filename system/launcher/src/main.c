@@ -31,7 +31,7 @@ typedef struct
 {
     const char *name;
     const char *short_name;
-    const char *emulator;
+    const char *core;
     const char **extensions;
     Game games[MAX_GAMES];
     int game_count;
@@ -52,10 +52,10 @@ static const char *ps1_exts[] = {".cue", ".chd", ".pbp", NULL};
 static const char *psp_exts[] = {".iso", ".cso", ".chd", NULL};
 
 static System systems[MAX_SYSTEMS] = {
-    {"Nintendo 64", "n64", "mupen64plus", n64_exts, {}, 0},
-    {"Dreamcast", "dc", "flycast", dc_exts, {}, 0},
-    {"PlayStation", "ps1", "duckstation-nogui", ps1_exts, {}, 0},
-    {"PS Portable", "psp", "PPSSPPSDL", psp_exts, {}, 0}};
+    {"Nintendo 64", "n64", "/usr/lib/cores/mupen64plus_next_libretro.so", n64_exts, {}, 0},
+    {"Dreamcast", "dc", "/usr/lib/cores/flycast_libretro.so", dc_exts, {}, 0},
+    {"PlayStation", "ps1", "/usr/lib/cores/pcsx_rearmed_libretro.so", ps1_exts, {}, 0},
+    {"PS Portable", "psp", "/usr/lib/cores/ppsspp_libretro.so", psp_exts, {}, 0}};
 
 static bool has_extension(const char *filename, const char **extensions)
 {
@@ -423,38 +423,21 @@ static void launch_game(System *sys, Game *game)
     printf("Launching: %s (%s)\n", game->name, game->path);
     cleanup_sdl();
 
-    const char *governor = "performance";
-    if (strcmp(sys->short_name, "n64") == 0)
-        set_cpu_governor(governor);
-
+    const char *gpu_gov = "performance";
     if (strcmp(sys->short_name, "ps1") == 0)
-        governor = "simple_ondemand";
+        gpu_gov = "simple_ondemand";
 
-    set_gpu_governor(governor);
-
+    set_cpu_governor("schedutil");
+    set_gpu_governor(gpu_gov);
 
     pid_t pid = fork();
     if (pid == 0)
     {
         // Child process
-        if (strcmp(sys->short_name, "n64") == 0)
-        {
-            execl("/usr/bin/mupen64plus", "mupen64plus", "--fullscreen", game->path, (char *)NULL);
-        }
-        else if (strcmp(sys->short_name, "dc") == 0)
-        {
-            execl("/usr/bin/flycast", "flycast", game->path, (char *)NULL);
-        }
-        else if (strcmp(sys->short_name, "ps1") == 0)
-        {
-            execl("/usr/bin/duckstation-nogui", "duckstation-nogui", game->path, (char *)NULL);
-        }
-        else if (strcmp(sys->short_name, "psp") == 0)
-        {
-            execl("/usr/bin/PPSSPPSDL", "PPSSPPSDL", game->path, (char *)NULL);
-        }
+        execl("/usr/bin/retroarch", "retroarch", "--verbose",
+            "-f", "-L", sys->core, game->path, (char *)NULL);
 
-        fprintf(stderr, "Failed to launch %s: %s\n", sys->emulator, strerror(errno));
+        fprintf(stderr, "Failed to launch %s: %s\n", sys->core, strerror(errno));
     }
     else if (pid > 0)
     {
@@ -470,7 +453,7 @@ static void launch_game(System *sys, Game *game)
             usleep(50000);
         }
 
-        printf("Emulator exited.");
+        printf("Emulator exited\n");
     }
     else
     {
@@ -478,9 +461,8 @@ static void launch_game(System *sys, Game *game)
         fprintf(stderr, "Fork failed\n");
     }
 
-    governor = "powersave";
-    set_cpu_governor(governor);
-    set_gpu_governor(governor);
+    set_cpu_governor("powersave");
+    set_gpu_governor("powersave");
 
 powoff:
     init_sdl();
@@ -523,7 +505,7 @@ static void handle_input(SDL_Event *event)
             }
             break;
 
-        case SDL_CONTROLLER_BUTTON_A:
+        case SDL_CONTROLLER_BUTTON_B:
             if (in_game_list)
             {
                 System *sys = &systems[current_system];
@@ -541,7 +523,7 @@ static void handle_input(SDL_Event *event)
             }
             break;
 
-        case SDL_CONTROLLER_BUTTON_B:
+        case SDL_CONTROLLER_BUTTON_A:
             if (in_game_list)
             {
                 in_game_list = false;

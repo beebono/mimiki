@@ -1,7 +1,7 @@
 # MIMIKI - Minimal Miyoo Kiosk
 # Top-level Makefile
 
-.PHONY: all help tools boot launcher emulators rootfs build-all image flash clean clean-all
+.PHONY: all help tools boot launcher retroarch rootfs build-all image flash clean clean-all
 
 BUILD_DIR := build
 SCRIPTS_DIR := scripts
@@ -21,7 +21,7 @@ help:
 	@echo "  make tools        - Build libraries and utilities"
 	@echo "  make boot         - Build boot essentials"
 	@echo "  make launcher     - Build MIMIKI SDL2 launcher"
-	@echo "  make emulators    - Build all emulators"
+	@echo "  make retroarch    - Build RetroArch and cores"
 	@echo "  make rootfs       - Build minimal RootFS"
 	@echo "  make build-all    - Build all of the above"
 	@echo ""
@@ -46,15 +46,15 @@ launcher:
 	$(call MSG_INFO,Building Launcher...)
 	@$(SCRIPTS_DIR)/build-launcher.sh
 
-emulators:
-	$(call MSG_INFO,Building Emulators...)
-	@$(SCRIPTS_DIR)/build-emulators.sh
+retroarch:
+	$(call MSG_INFO,Building RetroArch...)
+	@$(SCRIPTS_DIR)/build-retroarch.sh
 
 rootfs:
 	$(call MSG_INFO,Building RootFS...)
 	@$(SCRIPTS_DIR)/build-rootfs.sh
 
-build-all: tools boot launcher emulators rootfs
+build-all: tools boot launcher retroarch rootfs
 	$(call MSG_SUCCESS,All targets built!)
 
 image:
@@ -112,13 +112,10 @@ clean-all: clean
 	@rm -r external/tools/alsa-utils/build 2>/dev/null || true
 	$(call MSG_INFO,Cleaning Launcher build...)
 	@$(MAKE) -C system/launcher clean || true
-	$(call MSG_INFO,Cleaning Emulator builds...)
-	$(call MSG_INFO,Cleaning mupen64plus builds...)
-# Some of these need APIDIR because ???? to clean, even if it's incorrect
-	@$(MAKE) -C external/emulators/mupen64plus/core/projects/unix clean || true
-	@$(MAKE) -C external/emulators/mupen64plus/audio-sdl/projects/unix APIDIR=. clean || true
-	@$(MAKE) -C external/emulators/mupen64plus/input-sdl/projects/unix APIDIR=. clean || true
-	@$(MAKE) -C external/emulators/mupen64plus/rsp-hle/projects/unix APIDIR=. clean || true
-	@rm -r external/emulators/mupen64plus/video-gliden64/build 2>/dev/null || true
-	@$(MAKE) -C external/emulators/mupen64plus/ui-console/projects/unix APIDIR=. clean || true
+	$(call MSG_INFO,Cleaning RetroArch builds...)
+	@$(MAKE) -C external/retroarch/frontend clean || true
+	@$(MAKE) -C external/retroarch/mupen64plus-libretro-nx clean || true
+	@rm -r external/retroarch/flycast/build 2>/dev/null || true
+	@$(MAKE) -C external/retroarch/pcsx-rearmed clean || true
+	@rm -r external/retroarch/ppsspp/build 2>/dev/null || true
 	$(call MSG_SUCCESS,All clean!)

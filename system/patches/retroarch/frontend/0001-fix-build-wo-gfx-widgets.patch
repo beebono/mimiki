@@ -1,0 +1,52 @@
+diff --git a/gfx/drivers/gl2.c b/gfx/drivers/gl2.c
+index 6ba46b349a..93abdd6564 100644
+--- a/gfx/drivers/gl2.c
++++ b/gfx/drivers/gl2.c
+@@ -86,6 +86,8 @@
+ #endif
+ #ifdef HAVE_GFX_WIDGETS
+ #include "../gfx_widgets.h"
++#else
++#include "../gfx_display.h"
+ #endif
+ 
+ #ifndef GL_UNSIGNED_INT_8_8_8_8_REV
+diff --git a/gfx/drivers/gl3.c b/gfx/drivers/gl3.c
+index ab57b9b5d6..00c84d61d1 100644
+--- a/gfx/drivers/gl3.c
++++ b/gfx/drivers/gl3.c
+@@ -61,6 +61,8 @@
+ #endif
+ #ifdef HAVE_GFX_WIDGETS
+ #include "../gfx_widgets.h"
++#else
++#include "../gfx_display.h"
+ #endif
+ 
+ #define GL3_SET_TEXTURE_COORDS(coords, xamt, yamt) \
+diff --git a/gfx/drivers/vulkan.c b/gfx/drivers/vulkan.c
+index 5d1fd2b8c6..91fbae6b51 100644
+--- a/gfx/drivers/vulkan.c
++++ b/gfx/drivers/vulkan.c
+@@ -39,6 +39,8 @@
+ #endif
+ #ifdef HAVE_GFX_WIDGETS
+ #include "../gfx_widgets.h"
++#else
++#include "../gfx_display.h"
+ #endif
+ 
+ #include "../font_driver.h"
+diff --git a/retroarch.c b/retroarch.c
+index bf32f2a1eb..7d1c927a01 100644
+--- a/retroarch.c
++++ b/retroarch.c
+@@ -147,6 +147,8 @@
+ 
+ #ifdef HAVE_GFX_WIDGETS
+ #include "gfx/gfx_widgets.h"
++#else
++#include "gfx/gfx_display.h"
+ #endif
+ 
+ #include "input/input_remapping.h"

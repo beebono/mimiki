@@ -208,7 +208,7 @@ LABEL MIMIKI
   KERNEL /Image
   FDT /rk3566-miyoo-flip.dtb
   FDTOVERLAYS /rk3566-undervolt-cpu-l3.dtbo
-  APPEND rootwait quiet loglevel=0 fbcon=map:7
+  APPEND rootwait quiet loglevel=0
 EOF
 
     sync

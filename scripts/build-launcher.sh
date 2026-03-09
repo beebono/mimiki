@@ -66,11 +66,11 @@ install_launcher_assets() {
 
     mkdir -p "$SDL2_INSTALL/usr/share/mimiki/assets"
 
-    if [ -f "$LAUNCHER_DIR/assets/font.png" ]; then
-        cp "$LAUNCHER_DIR/assets/font.png" "$SDL2_INSTALL/usr/share/mimiki/assets/"
-        print_step "Font atlas installed!"
+    if [ -d "$LAUNCHER_DIR/assets" ]; then
+        cp -r "$LAUNCHER_DIR/assets"/* "$SDL2_INSTALL/usr/share/mimiki/assets/"
+        print_step "Assets installed!"
     else
-        print_warning "Font atlas not found. Reggie what did you do."
+        print_warning "Assets not found. Reggie what did you do."
     fi
 }
 
