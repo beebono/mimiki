@@ -163,7 +163,6 @@ apply_patches() {
         return
     fi
 
-    # Check for marker
     if [ -f ".patches_applied" ]; then
         print_step "$component_name patches already applied, skipping..."
         return
@@ -177,7 +176,6 @@ apply_patches() {
         fi
     done
 
-    # Create marker
     touch .patches_applied
 
     print_step "$component_name patches applied successfully!"

@@ -66,7 +66,7 @@ populate_rootfs() {
     rm -rf "$ROOTFS_BUILD"
     mkdir -p "$ROOTFS_BUILD"
     # Create directory structure
-    mkdir -p "$ROOTFS_BUILD"/{bin,dev,etc,lib,root,mnt/games,mnt/games2,proc,run,sbin,sys,tmp,usr/bin,usr/lib,usr/share,usr/sbin,var}
+    mkdir -p "$ROOTFS_BUILD"/{bin,dev,dev/pts,dev/shm,etc,lib,root,mnt/games,mnt/games2,proc,run,sbin,sys,tmp,usr/bin,usr/lib,usr/share,usr/sbin,var}
 
     if [ -d "$ROOTFS_SKELETON" ]; then
         cp -a "$ROOTFS_SKELETON"/* "$ROOTFS_BUILD"/ 2>/dev/null || true
@@ -206,6 +206,8 @@ install_emulators() {
         cp -a "$CONFIG_DIR/mupen64plus.cfg" \
             "$ROOTFS_BUILD/root/.config/mupen64plus/"
         cp -a "$CONFIG_DIR/InputAutoCfg.ini" \
+            "$ROOTFS_BUILD/root/.config/mupen64plus/data/"
+        cp -a "$BUILD_DIR/emulators/mupen64plus/GLideN64.custom.ini" \
             "$ROOTFS_BUILD/root/.config/mupen64plus/data/"
 
         print_step "mupen64plus installed!"

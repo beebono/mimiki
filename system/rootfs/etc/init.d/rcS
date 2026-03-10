@@ -25,6 +25,12 @@ if [ -b "/dev/mmcblk2p1" ]; then
     if [ $? -ne 0 ]; then
         echo "Failed to mount second SD Card! Make sure it's formatted as fat32 or exfat!"
     fi
+
+    # Copy bios for user convenience in case they want to use the second card for all game files
+    if [ -d "/mnt/games2/bios" ]; then
+        echo "Copying BIOS files from second SD Card..."
+        cp -r /mnt/games2/bios/* /mnt/games/data/bios/
+    fi
 fi
 
 echo "==> MIMIKI init complete!"

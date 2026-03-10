@@ -423,15 +423,12 @@ static void launch_game(System *sys, Game *game)
     printf("Launching: %s (%s)\n", game->name, game->path);
     cleanup_sdl();
 
-    const char *governor = "performance";
+    const char *gpu_gov = "simple_ondemand";
     if (strcmp(sys->short_name, "n64") == 0)
-        set_cpu_governor(governor);
+        gpu_gov = "performance";
 
-    if (strcmp(sys->short_name, "ps1") == 0)
-        governor = "simple_ondemand";
-
-    set_gpu_governor(governor);
-
+    set_cpu_governor("schedutil");
+    set_gpu_governor(gpu_gov);
 
     pid_t pid = fork();
     if (pid == 0)
@@ -470,7 +467,7 @@ static void launch_game(System *sys, Game *game)
             usleep(50000);
         }
 
-        printf("Emulator exited.");
+        printf("Emulator exited.\n");
     }
     else
     {
@@ -478,9 +475,8 @@ static void launch_game(System *sys, Game *game)
         fprintf(stderr, "Fork failed\n");
     }
 
-    governor = "powersave";
-    set_cpu_governor(governor);
-    set_gpu_governor(governor);
+    set_cpu_governor("powersave");
+    set_gpu_governor("powersave");
 
 powoff:
     init_sdl();

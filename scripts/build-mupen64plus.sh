@@ -44,42 +44,6 @@ print_warning() {
     echo -e "${YELLOW}Warning:${NC} $1" >&2
 }
 
-check_dependencies() {
-    print_step "Checking dependencies..."
-
-    local missing_deps=()
-
-    # Cross-compiler
-    if ! command -v "${CROSS_COMPILE}"gcc &> /dev/null; then
-        missing_deps+=("${CROSS_COMPILE}gcc (aarch64 cross-compiler)")
-    fi
-
-    if ! command -v "${CROSS_COMPILE}"g++ &> /dev/null; then
-        missing_deps+=("${CROSS_COMPILE}g++ (aarch64 cross-compiler)")
-    fi
-
-    # Build tools
-    for tool in make pkg-config; do
-        if ! command -v $tool &> /dev/null; then
-            missing_deps+=("$tool")
-        fi
-    done
-
-    # Check for SDL2 build
-    if [ ! -d "$SDL2_INSTALL/usr/lib" ]; then
-        print_error "SDL2 not found at $SDL2_INSTALL"
-        print_error "Run build-launcher.sh first to build SDL2"
-        exit 1
-    fi
-
-    if [ ${#missing_deps[@]} -ne 0 ]; then
-        print_error "Missing dependencies: ${missing_deps[*]}"
-        exit 1
-    fi
-
-    print_step "All dependencies found!"
-}
-
 setup_sdl2_environment() {
     print_step "Configuring SDL2 environment for cross-compilation..."
 
@@ -116,7 +80,6 @@ build_core() {
 
     cd "$CORE_DIR/projects/unix"
 
-    # Build configuration for ARM64
     make -j${JOBS} \
         all \
         HOST_CPU=aarch64 \
@@ -124,14 +87,9 @@ build_core() {
         PKG_CONFIG="${PKG_CONFIG}" \
         APIDIR="${API_DIR}" \
         OPTFLAGS="-Ofast -flto=auto" \
-        NEON=1 \
-        VFP_HARD=1 \
-        USE_GLES=1 \
-        VULKAN=1 \
-        OSD=0 \
-        NETPLAY=0 \
-        NEW_DYNAREC=1 \
-        PIC=1 \
+        USE_GLES=1 VULKAN=1 \
+        OSD=0 NETPLAY=0 \
+        NEW_DYNAREC=1 PIC=1 \
         PREFIX=/usr
 
     if [ ! -f "$CORE_DIR/projects/unix/libmupen64plus.so.2.0.0" ]; then
@@ -154,10 +112,7 @@ build_audio_sdl() {
         PKG_CONFIG="${PKG_CONFIG}" \
         APIDIR="${API_DIR}" \
         OPTFLAGS="-Ofast -flto=auto" \
-        PIC=1 \
-        NO_SRC=1 \
-        NO_SPEEX=1 \
-        NO_OSS=1 \
+        PIC=1 NO_SRC=1 NO_SPEEX=1 NO_OSS=1 \
         PREFIX=/usr
 
     if [ ! -f "$AUDIO_SDL_DIR/projects/unix/mupen64plus-audio-sdl.so" ]; then
@@ -290,8 +245,10 @@ install_mupen64plus() {
         "$M64P_INSTALL/lib/plugins/"
     cp "$VIDEO_GLIDEN64_DIR/build/plugin/Release/mupen64plus-video-GLideN64.so" \
         "$M64P_INSTALL/lib/plugins/"
+    cp "$VIDEO_GLIDEN64_DIR/ini/GLideN64.custom.ini" \
+        "$M64P_INSTALL/"
     cp "$UI_CONSOLE_DIR/projects/unix/mupen64plus" \
-       "$M64P_INSTALL/bin/"
+        "$M64P_INSTALL/bin/"
 
     print_step "Mupen64plus installed to $M64P_INSTALL"
 }
@@ -300,7 +257,6 @@ main() {
     echo -e "${GREEN}MIMIKI Mupen64plus Build${NC}"
     echo ""
 
-    check_dependencies
     setup_sdl2_environment
     build_core
     build_audio_sdl

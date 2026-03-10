@@ -1,0 +1,16 @@
+diff --git a/src/GraphicsDrawer.cpp b/src/GraphicsDrawer.cpp
+index bb60786b..e0241c79 100644
+--- a/src/GraphicsDrawer.cpp
++++ b/src/GraphicsDrawer.cpp
+@@ -591,8 +591,10 @@ void GraphicsDrawer::_dualSourceBlending() const
+ 
+ void GraphicsDrawer::setBlendMode(bool _forceLegacyBlending) const
+ {
++	const u32 blendmode = gDP.otherMode.l >> 16;
+ 	bool blastCorpsHack = (config.generalEmulation.hacks & hack_blastCorps) != 0 &&
+-						  gSP.texture.on == 0 && gDP.otherMode.cycleType < G_CYC_COPY && currentCombiner()->usesTexture();
++						  gSP.texture.on == 0 && gDP.otherMode.cycleType < G_CYC_COPY &&
++						  currentCombiner()->usesTexture() && blendmode < 0x0010;
+ 
+ 	if (blastCorpsHack) {
+ 		gfxContext.enable(enable::BLEND, true);

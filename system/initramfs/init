@@ -12,17 +12,11 @@ switch_to_mimiki() {
     mount "$ROOT_DEVICE" /newroot
     if [ $? -ne 0 ]; then
         echo "Error: Failed to mount root filesystem at $ROOT_DEVICE"
-        while (true); do
-            echo 1 > /sys/class/leds/red_led/brightness
-            echo 0 > /sys/class/leds/green_led/brightness
-            sleep 0.85
-            echo 0 > /sys/class/leds/red_led/brightness
-            echo 1 > /sys/class/leds/green_led/brightness
-            sleep 0.85
-        done
+        reboot -f # Reboot so it doesn't fallback to emmc and possibly mess with the sdcard
     fi
 
     mount --move /dev /newroot/dev
+    mount --move /dev/shm /newroot/dev/shm
     mount --move /dev/pts /newroot/dev/pts
     mount --move /mnt/games /newroot/mnt/games
     mount --move /proc /newroot/proc
@@ -41,6 +35,8 @@ mount -t tmpfs none /run
 mount -t sysfs sysfs /sys
 mount -t tmpfs -o size=64m,mode=1777 tmpfs /tmp
 mount -t devtmpfs devtmpfs /dev
+mkdir -p /dev/shm
+mount -t tmpfs -o size=128m,mode=1777 tmpfs /dev/shm
 mkdir -p /dev/pts
 mount -t devpts devpts /dev/pts
 
@@ -52,8 +48,8 @@ mount -t devpts devpts /dev/pts
 DEV_CHECKS=0
 while [ ! -b "$DEVICE" ]; do
     DEV_CHECKS=$((DEV_CHECKS + 1))
-    if [ $DEV_CHECKS -ge 100 ]; then
-        echo "$DEVICE didn't appear after 10 seconds, attempting switch to MIMIKI anyway..."
+    if [ $DEV_CHECKS -ge 50 ]; then
+        echo "$DEVICE didn't appear after 5 seconds, attempting switch to MIMIKI anyway..."
         switch_to_mimiki
     fi
     sleep 0.1
@@ -97,13 +93,13 @@ mkdir -p /mnt/games
 mount "$PART_DEVICE" /mnt/games
 if [ $? -eq 0 ]; then
     echo "Creating game directories..."
-    mkdir -p /mnt/games/n64/saves
-    mkdir -p /mnt/games/n64/states
-    mkdir -p /mnt/games/dc/bios
-    mkdir -p /mnt/games/dc/saves
-    mkdir -p /mnt/games/ps1/bios
-    mkdir -p /mnt/games/ps1/saves
-    mkdir -p /mnt/games/psp/data
+    mkdir -p /mnt/games/data/bios
+    mkdir -p /mnt/games/data/saves
+    mkdir -p /mnt/games/data/states
+    mkdir -p /mnt/games/n64
+    mkdir -p /mnt/games/dc
+    mkdir -p /mnt/games/ps1
+    mkdir -p /mnt/games/psp
 
     cat > /mnt/games/README.txt <<EOF
 MIMIKI - Game Storage
@@ -111,8 +107,8 @@ MIMIKI - Game Storage
 Place your game ROMs in the appropriate directories:
 
   /n64   - .z64, .n64, .v64
-  /dc    - .chd, .gdi, .cdi       ! BIOS FILES REQUIRED UNDER /dc/bios
-  /ps1   - .chd, .pbp, .bin/.cue  ! BIOS FILES REQUIRED UNDER /ps1/bios
+  /dc    - .chd, .gdi, .cdi       ! BIOS FILES REQUIRED UNDER /data/bios
+  /ps1   - .chd, .pbp, .bin/.cue  ! BIOS FILES REQUIRED UNDER /data/bios
   /psp   - .chd, .cso, .iso
 
 You can also make these same base folders on a second SD card
