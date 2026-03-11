@@ -17,18 +17,17 @@ set(CMAKE_OBJDUMP ${CROSS_COMPILE}objdump CACHE FILEPATH "Objdump")
 set(CMAKE_FIND_ROOT_PATH
     /usr/aarch64-linux-gnu
     /usr/lib/aarch64-linux-gnu
-    /usr/include
 )
 
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
-set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE BOTH)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
 # SDL2 installation path from build system
 # This can be overridden via -DSDL2_INSTALL=<path>
 if(NOT DEFINED SDL2_INSTALL)
-    get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+    get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
     set(SDL2_INSTALL "${REPO_ROOT}/build/sdl2-install" CACHE PATH "SDL2 installation path")
 endif()
 

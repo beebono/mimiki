@@ -1,0 +1,148 @@
+diff --git a/GLideN64/ini/GLideN64.custom.ini b/GLideN64/ini/GLideN64.custom.ini
+index 6157ef5..7fe7c58 100644
+--- a/GLideN64/ini/GLideN64.custom.ini
++++ b/GLideN64/ini/GLideN64.custom.ini
+@@ -14,6 +14,10 @@ graphics2D\enableNativeResTexrects=1
+ Good_Name=Baku Bomberman (J) [!]
+ generalEmulation\enableLegacyBlending=0
+ 
++[BANJO-KAZOOIE]
++Good_Name=Banjo-Kazooie (U) [!]
++frameBufferEmulation\copyToRDRAM=1
++
+ [BIOFREAKS]
+ Good_Name=Bio F.R.E.A.K.S. (E)(U)
+ frameBufferEmulation\copyToRDRAM=1
+@@ -74,7 +78,7 @@ frameBufferEmulation\copyAuxToRDRAM=1
+ 
+ [DONKEY%20KONG%2064]
+ Good_Name=Donkey Kong 64 (E)(J)(U)
+-frameBufferEmulation\copyDepthToRDRAM=1
++frameBufferEmulation\copyDepthToRDRAM=2
+ frameBufferEmulation\N64DepthCompare=0
+ 
+ [DR.MARIO%2064]
+@@ -83,6 +87,10 @@ frameBufferEmulation\fbInfoDisabled=0
+ frameBufferEmulation\copyFromRDRAM=1
+ frameBufferEmulation\copyToRDRAM=0
+ 
++[ELTAIL]
++Good_Name=Eltale Monsters (J)
++texture\enableHalosRemoval=1
++
+ [EXTREME_G]
+ Good_Name=Extreme-G (E)
+ frameBufferEmulation\N64DepthCompare=1
+@@ -133,6 +141,10 @@ frameBufferEmulation\copyToRDRAM=1
+ Good_Name=Hexen (E)(F)(G)(J)(U)
+ frameBufferEmulation\copyToRDRAM=1
+ 
++[HOLY%20MAGIC%20CENTURY]
++Good_Name=Holy Magic Century (E)(F)(G)
++texture\enableHalosRemoval=1
++
+ [HUMAN%20GRAND%20PRIX]
+ Good_Name=Human Grand Prix - New Generation (J)
+ frameBufferEmulation\copyToRDRAM=1
+@@ -265,6 +277,10 @@ frameBufferEmulation\copyDepthToRDRAM=0
+ Good_Name=Pokemon Puzzle League (E)(F)(G)(U)
+ texture\enableHalosRemoval=1
+ 
++[QUEST%2064]
++Good_Name=Quest 64 (U)
++texture\enableHalosRemoval=1
++
+ [RAT%20ATTACK]
+ Good_Name=Rat Attack
+ frameBufferEmulation\fbInfoDisabled=0
+@@ -345,7 +361,7 @@ frameBufferEmulation\copyToRDRAM=1
+ 
+ [TUROK_DINOSAUR_HUNTE]
+ Good_Name=Turok - Dinosaur Hunter (E)(G)(U)(J)
+-frameBufferEmulation\copyDepthToRDRAM=1
++frameBufferEmulation\copyDepthToRDRAM=2
+ 
+ [WAVE%20RACE%2064]
+ Good_Name=Wave Race 64 (E)(U)(J)
+diff --git a/GLideN64/src/GraphicsDrawer.cpp b/GLideN64/src/GraphicsDrawer.cpp
+index a2fb0af..25c92b2 100644
+--- a/GLideN64/src/GraphicsDrawer.cpp
++++ b/GLideN64/src/GraphicsDrawer.cpp
+@@ -586,8 +586,10 @@ void GraphicsDrawer::_dualSourceBlending() const
+ 
+ void GraphicsDrawer::setBlendMode(bool _forceLegacyBlending) const
+ {
++	const u32 blendmode = gDP.otherMode.l >> 16;
+ 	bool blastCorpsHack = (config.generalEmulation.hacks & hack_blastCorps) != 0 &&
+-						  gSP.texture.on == 0 && gDP.otherMode.cycleType < G_CYC_COPY && currentCombiner()->usesTexture();
++						  gSP.texture.on == 0 && gDP.otherMode.cycleType < G_CYC_COPY &&
++						  currentCombiner()->usesTexture() && blendmode < 0x0010;
+ 
+ 	if (blastCorpsHack) {
+ 		gfxContext.enable(enable::BLEND, true);
+diff --git a/custom/GLideN64/GLideN64.custom.ini.h b/custom/GLideN64/GLideN64.custom.ini.h
+index bc377cf..4bd5ce9 100644
+--- a/custom/GLideN64/GLideN64.custom.ini.h
++++ b/custom/GLideN64/GLideN64.custom.ini.h
+@@ -18,6 +18,10 @@ char customini[] =
+ "Good_Name=Baku Bomberman (J) [!]\n"
+ "generalEmulation\\enableLegacyBlending=0\n"
+ "\n"
++"[BANJO-KAZOOIE]\n"
++"Good_Name=Banjo-Kazooie (U) [!]\n"
++"frameBufferEmulation\\copyToRDRAM=1\n"
++"\n"
+ "[BIOFREAKS]\n"
+ "Good_Name=Bio F.R.E.A.K.S. (E)(U)\n"
+ "frameBufferEmulation\\copyToRDRAM=1\n"
+@@ -78,7 +82,7 @@ char customini[] =
+ "\n"
+ "[DONKEY%20KONG%2064]\n"
+ "Good_Name=Donkey Kong 64 (E)(J)(U)\n"
+-"frameBufferEmulation\\copyDepthToRDRAM=1\n"
++"frameBufferEmulation\\copyDepthToRDRAM=2\n"
+ "frameBufferEmulation\\N64DepthCompare=0\n"
+ "\n"
+ "[DR.MARIO%2064]\n"
+@@ -87,6 +91,10 @@ char customini[] =
+ "frameBufferEmulation\\copyFromRDRAM=1\n"
+ "frameBufferEmulation\\copyToRDRAM=0\n"
+ "\n"
++"[ELTAIL]\n"
++"Good_Name=Eltale Monsters (J)\n"
++"texture\\enableHalosRemoval=1\n"
++"\n"
+ "[EXTREME_G]\n"
+ "Good_Name=Extreme-G (E)\n"
+ "frameBufferEmulation\\N64DepthCompare=1\n"
+@@ -137,6 +145,10 @@ char customini[] =
+ "Good_Name=Hexen (E)(F)(G)(J)(U)\n"
+ "frameBufferEmulation\\copyToRDRAM=1\n"
+ "\n"
++"[HOLY%20MAGIC%20CENTURY]\n"
++"Good_Name=Holy Magic Century (E)(F)(G)\n"
++"texture\\enableHalosRemoval=1\n"
++"\n"
+ "[HUMAN%20GRAND%20PRIX]\n"
+ "Good_Name=Human Grand Prix - New Generation (J)\n"
+ "frameBufferEmulation\\copyToRDRAM=1\n"
+@@ -269,6 +281,10 @@ char customini[] =
+ "Good_Name=Pokemon Puzzle League (E)(F)(G)(U)\n"
+ "texture\\enableHalosRemoval=1\n"
+ "\n"
++"[QUEST%2064]\n"
++"Good_Name=Quest 64 (U)\n"
++"texture\\enableHalosRemoval=1\n"
++"\n"
+ "[RAT%20ATTACK]\n"
+ "Good_Name=Rat Attack\n"
+ "frameBufferEmulation\\fbInfoDisabled=0\n"
+@@ -349,7 +365,7 @@ char customini[] =
+ "\n"
+ "[TUROK_DINOSAUR_HUNTE]\n"
+ "Good_Name=Turok - Dinosaur Hunter (E)(G)(U)(J)\n"
+-"frameBufferEmulation\\copyDepthToRDRAM=1\n"
++"frameBufferEmulation\\copyDepthToRDRAM=2\n"
+ "\n"
+ "[WAVE%20RACE%2064]\n"
+ "Good_Name=Wave Race 64 (E)(U)(J)\n"

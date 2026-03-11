@@ -144,7 +144,7 @@ apply_patches() {
         done
 
         touch .patches_applied
-    fi  
+    fi
 
     print_step "RetroArch patches applied successfully!"
 }
