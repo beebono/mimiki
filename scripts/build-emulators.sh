@@ -21,6 +21,7 @@ SDL2_INSTALL="$BUILD_DIR/sdl2-install"
 export ARCH=arm64
 export CROSS_COMPILE=aarch64-linux-gnu-
 CMAKE_TC="$REPO_ROOT/system/config/toolchain-aarch64-linux-gnu.cmake"
+CMAKE_TC_CLANG="$REPO_ROOT/system/config/toolchain-aarch64-linux-gnu-clang.cmake"
 HOST=aarch64-linux-gnu
 JOBS=$(nproc)
 
@@ -50,8 +51,14 @@ check_dependencies() {
         missing_deps+=("${CROSS_COMPILE}g++ (aarch64 cross-compiler)")
     fi
 
+    for tool in clang clang++ lld; do
+        if ! command -v $tool &> /dev/null; then
+            missing_deps+=("$tool (required for DuckStation)")
+        fi
+    done
+
     # Build tools
-    for tool in make pkg-config; do
+    for tool in make pkg-config ninja; do
         if ! command -v $tool &> /dev/null; then
             missing_deps+=("$tool")
         fi
@@ -75,9 +82,8 @@ check_dependencies() {
 setup_sdl2_environment() {
     print_step "Configuring SDL2 environment for cross-compilation..."
 
-    # Point pkg-config to our custom SDL2
+    # Point pkg-config to custom SDL2
     export PKG_CONFIG_PATH="$SDL2_INSTALL/usr/lib/pkgconfig:$PKG_CONFIG_PATH"
-    export PKG_CONFIG_SYSROOT_DIR="$SDL2_INSTALL"
     export PKG_CONFIG_LIBDIR="/usr/lib/aarch64-linux-gnu/pkgconfig"
 
     # Also set SDL2_CONFIG as fallback
@@ -135,19 +141,130 @@ apply_patches() {
 
 apply_all_patches() {
     apply_patches "mupen64plus" "$EMU_DIR/mupen64plus/video-gliden64" "mupen64plus"
-    # Leave in case other patches are needed, otherwise consolidate before release
+    apply_patches "duckstation" "$EMU_DIR/duckstation" "duckstation"
 }
 
 build_flycast() {
+    print_step "Building Flycast..."
 
+    local FLYCAST_DIR="$EMU_DIR/flycast"
+    local FLYCAST_BUILD="$FLYCAST_DIR/build"
+    local FLYCAST_INSTALL="$EMU_INSTALL/flycast"
+
+    mkdir -p "$FLYCAST_BUILD"
+    cd "$FLYCAST_BUILD"
+
+    cmake .. \
+        -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TC" -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="$FLYCAST_INSTALL" \
+        -DUSE_VULKAN=ON -DUSE_HOST_SDL=ON -DUSE_OPENGL=OFF -DUSE_GLES=ON \
+        -DUSE_HOST_LIBZIP=OFF -DUSE_LIBAO=OFF -DUSE_PULSEAUDIO=OFF -DUSE_LUA=OFF \
+        -DUSE_BREAKPAD=OFF -DWITH_LZMA_ASM=OFF -DUSE_DX9=OFF -DUSE_DX11=OFF
+
+    cmake --build . -j"$JOBS"
+
+    if [ ! -f "$FLYCAST_BUILD/flycast" ]; then
+        print_error "Flycast build failed!"
+        exit 1
+    fi
+
+    "${CROSS_COMPILE}"strip --strip-unneeded "$FLYCAST_BUILD/flycast"
+    cmake --install .
+
+    print_step "Flycast built and installed to $FLYCAST_INSTALL"
+}
+
+build_duckstation_deps() {
+    # DuckStation requires SDL3 and several other libraries not covered by
+    # mimiki's SDL2 build. Luckily it has its own script to cover this!
+    local DS_DIR="$EMU_DIR/duckstation"
+    local DS_HOST_DEPS="$BUILD_DIR/duckstation-host-deps"
+    local DS_DEPS="$BUILD_DIR/duckstation-deps"
+
+    if [ -f "$DS_DEPS/lib/libsoundtouch.so" ] || [ -f "$DS_DEPS/lib/libsoundtouch.a" ]; then
+        print_step "DuckStation deps already built, skipping..."
+        return
+    fi
+
+    print_step "Building DuckStation dependencies (SDL3, shaderc, etc.)..."
+
+    mkdir -p "$DS_HOST_DEPS" "$DS_DEPS"
+
+    local SYSROOT="/"
+
+    "$DS_DIR/scripts/deps/build-dependencies-linux-cross.sh" \
+        "$DS_HOST_DEPS" arm64 "$SYSROOT" "$DS_DEPS"
+
+    print_step "DuckStation dependencies built at $DS_DEPS"
 }
 
 build_duckstation() {
+    print_step "Building DuckStation..."
 
+    local DS_DIR="$EMU_DIR/duckstation"
+    local DS_DEPS="$BUILD_DIR/duckstation-deps"
+    local DS_BUILD="$DS_DIR/build"
+    local DS_INSTALL="$EMU_INSTALL/duckstation"
+
+    mkdir -p "$DS_BUILD"
+    cd "$DS_BUILD"
+
+    build_duckstation_deps
+
+    # DuckStation officially only supports Clang, so use a specific cross toolchain.
+    cmake .. \
+        -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TC_CLANG" -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_PREFIX_PATH="$DS_DEPS" -DCMAKE_INSTALL_PREFIX="$DS_INSTALL" \
+        -DBUILD_QT_FRONTEND=OFF -DBUILD_MINI_FRONTEND=ON -DENABLE_VULKAN=ON \
+        -DENABLE_OPENGL=OFF -DENABLE_X11=OFF -DENABLE_WAYLAND=OFF
+
+    cmake --build . --target duckstation-mini -j"$JOBS"
+
+    if [ ! -f "$DS_BUILD/bin/duckstation-mini" ]; then
+        print_error "DuckStation build failed!"
+        exit 1
+    fi
+
+    "${CROSS_COMPILE}"strip --strip-unneeded "$DS_BUILD/bin/duckstation-mini"
+    mkdir -p "$DS_INSTALL"
+    cmake --install . --component duckstation-mini
+    cp -r "$DS_BUILD/bin"/* "$DS_INSTALL/"
+
+    print_step "DuckStation built and installed to $DS_INSTALL"
 }
 
 build_ppsspp() {
+    print_step "Building PPSSPP..."
 
+    local PPSSPP_DIR="$EMU_DIR/ppsspp"
+    local PPSSPP_BUILD="$PPSSPP_DIR/build"
+    local PPSSPP_INSTALL="$EMU_INSTALL/ppsspp"
+
+    mkdir -p "$PPSSPP_BUILD"
+    cd "$PPSSPP_BUILD"
+
+    cmake .. \
+        -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TC" -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="$PPSSPP_INSTALL" \
+        -DARM64=ON -DUSE_FFMPEG=OFF -DUSE_DISCORD=OFF -DUSE_MINIUPNPC=OFF \
+        -DUSE_SYSTEM_SNAPPY=OFF -DUSE_SYSTEM_FFMPEG=OFF -DUSE_SYSTEM_LIBZIP=OFF \
+        -DUSE_SYSTEM_ZSTD=OFF -DUSE_SYSTEM_MINIUPNPC=OFF -DUSING_QT_UI=OFF \
+        -DUSING_X11_VULKAN=OFF -DUSE_WAYLAND_WSI=OFF -DUSE_VULKAN_DISPLAY_KHR=ON -DHEADLESS=OFF
+
+    cmake --build . -j"$JOBS"
+
+    if [ ! -f "$PPSSPP_BUILD/PPSSPPSDL" ]; then
+        print_error "PPSSPP build failed!"
+        exit 1
+    fi
+
+    "${CROSS_COMPILE}"strip --strip-unneeded "$PPSSPP_BUILD/PPSSPPSDL"
+
+    mkdir -p "$PPSSPP_INSTALL/bin"
+    cp "$PPSSPP_BUILD/PPSSPPSDL" "$PPSSPP_INSTALL/bin/"
+    cp -r "$PPSSPP_DIR/assets" "$PPSSPP_INSTALL/"
+
+    print_step "PPSSPP built and installed to $PPSSPP_INSTALL"
 }
 
 main() {

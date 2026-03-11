@@ -113,7 +113,6 @@ clean-all: clean
 	$(call MSG_INFO,Cleaning Launcher build...)
 	@$(MAKE) -C system/launcher clean || true
 	$(call MSG_INFO,Cleaning Emulator builds...)
-	$(call MSG_INFO,Cleaning mupen64plus builds...)
 # Some of these need APIDIR because ???? to clean, even if it's incorrect
 	@$(MAKE) -C external/emulators/mupen64plus/core/projects/unix clean || true
 	@$(MAKE) -C external/emulators/mupen64plus/audio-sdl/projects/unix APIDIR=. clean || true
@@ -121,4 +120,7 @@ clean-all: clean
 	@$(MAKE) -C external/emulators/mupen64plus/rsp-hle/projects/unix APIDIR=. clean || true
 	@rm -r external/emulators/mupen64plus/video-gliden64/build 2>/dev/null || true
 	@$(MAKE) -C external/emulators/mupen64plus/ui-console/projects/unix APIDIR=. clean || true
+	@rm -r external/emulators/flycast/build 2>/dev/null || true
+	@rm -r external/emulators/duckstation/build 2>/dev/null || true
+	@rm -r external/emulators/ppsspp/build 2>/dev/null || true
 	$(call MSG_SUCCESS,All clean!)

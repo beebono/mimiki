@@ -80,17 +80,10 @@ build_core() {
 
     cd "$CORE_DIR/projects/unix"
 
-    make -j${JOBS} \
-        all \
-        HOST_CPU=aarch64 \
-        CROSS_COMPILE="${CROSS_COMPILE}" \
-        PKG_CONFIG="${PKG_CONFIG}" \
-        APIDIR="${API_DIR}" \
-        OPTFLAGS="-Ofast -flto=auto" \
-        USE_GLES=1 VULKAN=1 \
-        OSD=0 NETPLAY=0 \
-        NEW_DYNAREC=1 PIC=1 \
-        PREFIX=/usr
+    make -j${JOBS} all \
+        HOST_CPU=aarch64 CROSS_COMPILE="${CROSS_COMPILE}" PKG_CONFIG="${PKG_CONFIG}" \
+        APIDIR="${API_DIR}" OPTFLAGS="-Ofast -flto=auto" USE_GLES=1 VULKAN=1 \
+        OSD=0 NETPLAY=0 NEW_DYNAREC=1 PIC=1 PREFIX=/usr
 
     if [ ! -f "$CORE_DIR/projects/unix/libmupen64plus.so.2.0.0" ]; then
         print_error "Core library build failed!"
@@ -105,14 +98,9 @@ build_audio_sdl() {
 
     cd "$AUDIO_SDL_DIR/projects/unix"
 
-    make -j${JOBS} \
-        all \
-        HOST_CPU=aarch64 \
-        CROSS_COMPILE="${CROSS_COMPILE}" \
-        PKG_CONFIG="${PKG_CONFIG}" \
-        APIDIR="${API_DIR}" \
-        OPTFLAGS="-Ofast -flto=auto" \
-        PIC=1 NO_SRC=1 NO_SPEEX=1 NO_OSS=1 \
+    make -j${JOBS} all \
+        HOST_CPU=aarch64 CROSS_COMPILE="${CROSS_COMPILE}" PKG_CONFIG="${PKG_CONFIG}" \
+        APIDIR="${API_DIR}" OPTFLAGS="-Ofast -flto=auto" PIC=1 NO_SRC=1 NO_SPEEX=1 NO_OSS=1 \
         PREFIX=/usr
 
     if [ ! -f "$AUDIO_SDL_DIR/projects/unix/mupen64plus-audio-sdl.so" ]; then
@@ -128,15 +116,9 @@ build_input_sdl() {
 
     cd "$INPUT_SDL_DIR/projects/unix"
 
-    make -j${JOBS} \
-        all \
-        HOST_CPU=aarch64 \
-        CROSS_COMPILE="${CROSS_COMPILE}" \
-        PKG_CONFIG="${PKG_CONFIG}" \
-        APIDIR="${API_DIR}" \
-        OPTFLAGS="-Ofast -flto=auto" \
-        PIC=1 \
-        PREFIX=/usr
+    make -j${JOBS} all \
+        HOST_CPU=aarch64 CROSS_COMPILE="${CROSS_COMPILE}" PKG_CONFIG="${PKG_CONFIG}" \
+        APIDIR="${API_DIR}" OPTFLAGS="-Ofast -flto=auto" PIC=1 PREFIX=/usr
 
     if [ ! -f "$INPUT_SDL_DIR/projects/unix/mupen64plus-input-sdl.so" ]; then
         print_error "Input plugin build failed!"
@@ -151,15 +133,9 @@ build_rsp_hle() {
 
     cd "$RSP_HLE_DIR/projects/unix"
 
-    make -j${JOBS} \
-        all \
-        HOST_CPU=aarch64 \
-        CROSS_COMPILE="${CROSS_COMPILE}" \
-        PKG_CONFIG="${PKG_CONFIG}" \
-        APIDIR="${API_DIR}" \
-        OPTFLAGS="-Ofast -flto=auto" \
-        PIC=1 \
-        PREFIX=/usr
+    make -j${JOBS} all \
+        HOST_CPU=aarch64 CROSS_COMPILE="${CROSS_COMPILE}" PKG_CONFIG="${PKG_CONFIG}" \
+        APIDIR="${API_DIR}" OPTFLAGS="-Ofast -flto=auto" PIC=1 PREFIX=/usr
 
     if [ ! -f "$RSP_HLE_DIR/projects/unix/mupen64plus-rsp-hle.so" ]; then
         print_error "RSP HLE plugin build failed!"
@@ -176,10 +152,7 @@ build_video_gliden64() {
     mkdir -p build
     cd build
     cmake ../src \
-        -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TC}" \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_C_FLAGS="-Ofast -march=armv8-a+simd -mtune=cortex-a55 -flto=auto" \
-        -DCMAKE_CXX_FLAGS="-Ofast -march=armv8-a+simd -mtune=cortex-a55 -flto=auto" \
+        -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TC}" -DCMAKE_BUILD_TYPE=Release \
         -DEGL=ON -DMUPENPLUSAPI=ON -DMESA=ON -DNO_OSD=ON -DNOHQ=ON -DVEC4_OPT=ON -DCRC_OPT=ON \
         -DNEON_OPT=ON -DUNIX=ON
     make -j${JOBS}
@@ -195,15 +168,9 @@ build_ui_console() {
 
     cd "$UI_CONSOLE_DIR/projects/unix"
 
-    make -j${JOBS} \
-        all \
-        HOST_CPU=aarch64 \
-        CROSS_COMPILE=${CROSS_COMPILE} \
-        PKG_CONFIG="${PKG_CONFIG}" \
-        APIDIR="${API_DIR}" \
-        OPTFLAGS="-Ofast -flto=auto" \
-        PIE=1 \
-        PREFIX=/usr
+    make -j${JOBS} all \
+        HOST_CPU=aarch64 CROSS_COMPILE=${CROSS_COMPILE} PKG_CONFIG="${PKG_CONFIG}" \
+        APIDIR="${API_DIR}" OPTFLAGS="-Ofast -flto=auto" PIE=1 PREFIX=/usr
 
     if [ ! -f "$UI_CONSOLE_DIR/projects/unix/mupen64plus" ]; then
         print_error "UI console build failed!"
