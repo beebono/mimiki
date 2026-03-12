@@ -423,10 +423,16 @@ static void launch_game(System *sys, Game *game)
     printf("Launching: %s (%s)\n", game->name, game->path);
     cleanup_sdl();
 
+    const char *system_dir = "/root/.config/retroarch/system";
     const char *gpu_gov = "performance";
-    if (strcmp(sys->short_name, "ps1") == 0)
+    if (strcmp(sys->short_name, "ps1") == 0) {
+        system_dir = "/mnt/games/bios";
         gpu_gov = "simple_ondemand";
+    } else if (strcmp(sys->short_name, "dc") == 0) {
+        system_dir = "/mnt/games/bios";
+    }
 
+    setenv("LIBRETRO_SYSTEM_DIRECTORY", system_dir, 1);
     set_cpu_governor("schedutil");
     set_gpu_governor(gpu_gov);
 

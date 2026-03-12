@@ -118,6 +118,14 @@ install_alsa() {
         print_warning "ALSA utilities not found! Run 'make tools' first."
     fi
 
+    if [ -d "/usr/share/alsa" ]; then
+        mkdir -p "$ROOTFS_BUILD/usr/share/alsa"
+        cp -a /usr/share/alsa/* "$ROOTFS_BUILD/usr/share/alsa/"
+        print_step "ALSA config files installed!"
+    else
+        print_warning "ALSA config files not found at /usr/share/alsa"
+    fi
+
     print_step "ALSA installed!"
 }
 
@@ -139,15 +147,6 @@ install_libraries() {
 
     # Additional libraries (Audio)
     cp -L "$SYSROOT/libasound.so.2" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libasound not found"
-
-    # ALSA configuration files
-    if [ -d "/usr/share/alsa" ]; then
-        mkdir -p "$ROOTFS_BUILD/usr/share/alsa"
-        cp -a /usr/share/alsa/* "$ROOTFS_BUILD/usr/share/alsa/"
-        print_step "ALSA config files installed!"
-    else
-        print_warning "ALSA config files not found at /usr/share/alsa"
-    fi
 
     # Additional libraries (GPU)
     mkdir -p "$ROOTFS_BUILD/usr/share/vulkan/icd.d"
@@ -196,11 +195,15 @@ install_retroarch() {
             "$ROOTFS_BUILD/usr/bin/"
         cp -a "$BUILD_DIR/retroarch/lib"/* \
             "$ROOTFS_BUILD/usr/lib/"
-        mkdir -p "$ROOTFS_BUILD/root/.config/retroarch"
+        mkdir -p "$ROOTFS_BUILD/root/.config/retroarch"/{autoconfig,system}
         cp -a "$CONFIG_DIR/retroarch.cfg" \
             "$ROOTFS_BUILD/root/.config/retroarch/"
         cp -a "$CONFIG_DIR/retroarch-core-options.cfg" \
             "$ROOTFS_BUILD/root/.config/retroarch/"
+        cp -a "$CONFIG_DIR/retrogame_joypad.cfg" \
+            "$ROOTFS_BUILD/root/.config/retroarch/autoconfig"
+        cp -ar "$BUILD_DIR/retroarch/system"/* \
+            "$ROOTFS_BUILD/root/.config/retroarch/system/"
     fi
 
     print_step "RetroArch installed!"

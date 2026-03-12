@@ -102,10 +102,6 @@ setup_sdl2_environment() {
 
     local sdl2_version=$(pkg-config --modversion sdl2)
     print_step "Found SDL2 version: $sdl2_version"
-
-    # Create installation directories
-    mkdir -p "$RA_INSTALL/bin"
-    mkdir -p "$RA_INSTALL/lib/cores"
 }
 
 apply_patches() {
@@ -171,7 +167,7 @@ build_frontend() {
         --disable-cg --disable-builtinzlib --enable-zlib --enable-alsa --disable-rpiled \
         --enable-tinyalsa --disable-audioio --disable-oss --disable-rsound --disable-roar \
         --enable-plain_drm --disable-jack --disable-coreaudio --disable-pipewire --disable-pulse \
-        --disable-freetype --disable-stb_font --disable-stb_image --disable-stb_vorbis \
+        --disable-freetype --enable-stb_font --disable-stb_image --disable-stb_vorbis \
         --disable-ibxm --disable-v4l2 --disable-7zip --disable-zstd --disable-flac \
         --disable-dr_mp3 --disable-builtinflac --disable-online_updater --disable-update_cores \
         --disable-update_core_info --disable-update_assets --disable-parport --disable-imageviewer \
@@ -218,12 +214,12 @@ build_flycast() {
     mkdir -p "$FLYCAST_DIR/build"
     cd "$FLYCAST_DIR/build"
 
-    cmake ../ \
+    cmake .. \
         -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TC}" -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_C_FLAGS="-Ofast -march=armv8-a+simd -mtune=cortex-a55 -flto=auto" \
         -DCMAKE_CXX_FLAGS="-Ofast -march=armv8-a+simd -mtune=cortex-a55 -flto=auto" \
-        -DLIBRETRO=ON -DUSE_DX9=OFF -DUSE_DX11=OFF -DUSE_OPENGL=OFF -DUSE_LIBAO=OFF \
-        -DUSE_PULSEAUDIO=OFF -DUSE_BREAKPAD=OFF -DUSE_LUA=OFF -DWITH_LZMA_ASM=OFF
+        -DLIBRETRO=ON -DUSE_DX9=OFF -DUSE_DX11=OFF -DUSE_OPENGL=OFF -DUSE_GLES=OFF -DUSE_VULKAN=ON \
+        -DUSE_LIBAO=OFF -DUSE_PULSEAUDIO=OFF -DUSE_BREAKPAD=OFF -DUSE_LUA=OFF -DWITH_LZMA_ASM=OFF
     make -j${JOBS}
 
     if [ ! -f "$FLYCAST_DIR/build/flycast_libretro.so" ]; then
@@ -261,12 +257,12 @@ build_ppsspp() {
     mkdir -p "$PPSSPP_DIR/build"
     cd "$PPSSPP_DIR/build"
 
-    cmake ../ \
+    cmake .. \
         -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TC}" -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_C_FLAGS="-Ofast -march=armv8-a+simd -mtune=cortex-a55 -flto=auto" \
         -DCMAKE_CXX_FLAGS="-Ofast -march=armv8-a+simd -mtune=cortex-a55 -flto=auto" \
-        -DLIBRETRO=ON -DUSE_DX11_VULKAN=OFF -DUSE_WAYLAND_WSI=OFF -DUSE_VULKAN_DISPLAY_KHR=ON \
-        -DHEADLESS=OFF -DUSE_FFMPEG=OFF -DUSE_DISCORD=OFF -DUSE_MINIUPNPC=OFF \
+        -DLIBRETRO=ON -DUSING_X11_VULKAN=OFF -DUSE_WAYLAND_WSI=OFF -DUSE_VULKAN_DISPLAY_KHR=ON \
+        -DARM64=ON -DHEADLESS=OFF -DUSE_FFMPEG=ON -DUSE_DISCORD=OFF -DUSE_MINIUPNPC=OFF \
         -DUSE_SYSTEM_SNAPPY=OFF -DUSE_SYSTEM_FFMPEG=OFF -DUSE_SYSTEM_LIBZIP=OFF \
         -DUSE_SYSTEM_LIBSDL2=ON -DUSE_SYSTEM_LIBPNG=OFF -DUSE_SYSTEM_ZSTD=OFF \
         -DUSE_SYSTEM_MINIUPNPC=OFF
@@ -293,11 +289,17 @@ strip_binaries() {
 install_retroarch() {
     print_step "Installing RetroArch to build directory..."
 
+    mkdir -p "$RA_INSTALL/bin"
+    mkdir -p "$RA_INSTALL/lib/cores"
+    mkdir -p "$RA_INSTALL/system"/{Mupen64plus,PPSSPP}
+
     cp "$RAFRONT_DIR/retroarch" "$RA_INSTALL/bin/"
     cp "$M64P_DIR/mupen64plus_next_libretro.so" "$RA_INSTALL/lib/cores/"
+    cp "$REPO_ROOT/system/config/mupen64plus.ini" "$RA_INSTALL/system/Mupen64plus/"
     cp "$FLYCAST_DIR/build/flycast_libretro.so" "$RA_INSTALL/lib/cores/"
     cp "$PCSXRA_DIR/pcsx_rearmed_libretro.so" "$RA_INSTALL/lib/cores/"
     cp "$PPSSPP_DIR/build/lib/ppsspp_libretro.so" "$RA_INSTALL/lib/cores/"
+    cp -r "$PPSSPP_DIR/assets"/* "$RA_INSTALL/system/PPSSPP/"
 
     print_step "RetroArch installed to $RA_INSTALL"
 }
