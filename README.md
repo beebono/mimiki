@@ -120,3 +120,17 @@ These same directories can be created on a second SD card, the launcher will sca
 | Dreamcast   | Flycast                 |
 | PlayStation | PCSX ReARMed            |
 | PSP         | PPSSPP                  |
+
+---
+
+## System-wide Hotkeys
+
+| Key Combo | Effect                        |
+|-----------|-------------------------------|
+| M + Start | Exit to Menu                  |
+| M + R3    | Save State                    |
+| M + L3    | Load State                    |
+| Lid       | Sleep/Wake                    |
+| Tap Pwr   | Sleep/Wake                    |
+| Hold Pwr  | Exit+Pwroff (!DOES NOT SAVE!) |
+
