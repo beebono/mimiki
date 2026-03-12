@@ -142,6 +142,20 @@ apply_patches() {
         touch .patches_applied
     fi
 
+    cd "$PPSSPP_DIR"
+
+    if [ ! -f ".patches_applied" ]; then
+        for patch in "$PATCHES_DIR/ppsspp"/*.patch; do
+            if [ -f "$patch" ]; then
+                local patch_name=$(basename "$patch")
+                print_step "  Applying $patch_name..."
+                git apply "$patch"
+            fi
+        done
+
+        touch .patches_applied
+    fi
+
     print_step "RetroArch patches applied successfully!"
 }
 
