@@ -130,7 +130,8 @@ These same directories can be created on a second SD card, the launcher will sca
 | M + Start | Exit to Menu                  |
 | M + R3    | Save State                    |
 | M + L3    | Load State                    |
+| M + VolUp | Brightness Up                 |
+| M + VolDn | Brightness Down               |
 | Lid       | Sleep/Wake                    |
 | Tap Pwr   | Sleep/Wake                    |
 | Hold Pwr  | Exit+Pwroff (!DOES NOT SAVE!) |
-

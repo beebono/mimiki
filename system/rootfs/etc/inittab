@@ -5,7 +5,7 @@
 ::sysinit:/etc/init.d/rcS
 
 # Keep launcher alive
-::respawn:/bin/sh -l -c "/usr/bin/mimiki-launcher 2>&1 | tee /mnt/games/data/mimiki.log"
+::respawn:/bin/sh -l -c "/usr/bin/mimiki-launcher"
 
 # Break it down
 ::shutdown:/etc/init.d/rcK
