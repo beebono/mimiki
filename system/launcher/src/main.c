@@ -494,8 +494,7 @@ static void launch_game(System *sys, Game *game)
     if (pid == 0)
     {
         // Child process
-        execl("/usr/bin/retroarch", "retroarch",
-            "-f", "-L", sys->core, game->path, (char *)NULL);
+        execl("/usr/bin/retroarch", "retroarch", "-L", sys->core, game->path, (char *)NULL);
 
         fprintf(stderr, "Failed to launch %s: %s\n", sys->core, strerror(errno));
     }
