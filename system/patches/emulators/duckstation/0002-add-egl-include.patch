@@ -1,0 +1,12 @@
+diff --git a/src/util/opengl_context.cpp b/src/util/opengl_context.cpp
+index 838400575..0221924a4 100644
+--- a/src/util/opengl_context.cpp
++++ b/src/util/opengl_context.cpp
+@@ -23,6 +23,7 @@
+ #include "opengl_context_egl_android.h"
+ #else
+ #ifdef ENABLE_EGL
++#include "opengl_context_egl.h"
+ #ifdef ENABLE_WAYLAND
+ #include "opengl_context_egl_wayland.h"
+ #endif

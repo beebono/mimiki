@@ -1,0 +1,51 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 85126e0d1..492c49a41 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -533,9 +533,13 @@ if(NOT LIBRETRO)
+ 		target_compile_definitions(${PROJECT_NAME} PRIVATE USE_SDL USE_SDL_AUDIO)
+ 		add_subdirectory(core/sdl)
+ 
+-		if((UNIX AND NOT APPLE) OR NINTENDO_SWITCH)
+-			find_package(CURL REQUIRED)
+-			target_link_libraries(${PROJECT_NAME} PRIVATE CURL::libcurl)
++		if(NOT DISABLE_CURL)
++			if((UNIX AND NOT APPLE) OR NINTENDO_SWITCH)
++				find_package(CURL REQUIRED)
++				target_link_libraries(${PROJECT_NAME} PRIVATE CURL::libcurl)
++			endif()
++		else()
++			target_compile_definitions(${PROJECT_NAME} PRIVATE DISABLE_CURL)
+ 		endif()
+ 	endif()
+ 
+diff --git a/core/oslib/http_client.cpp b/core/oslib/http_client.cpp
+index e4fa6c194..e937d2dcb 100644
+--- a/core/oslib/http_client.cpp
++++ b/core/oslib/http_client.cpp
+@@ -220,6 +220,7 @@ void term()
+ #endif	// !TARGET_UWP
+ 
+ #else
++#ifndef DISABLE_CURL
+ #include <curl/curl.h>
+ 
+ namespace http {
+@@ -342,5 +343,17 @@ void term()
+ }
+ 
+ }
++#else // DISABLE_CURL
++
++namespace http {
++
++void init() {}
++void term() {}
++int get(const std::string&, std::vector<u8>&, std::string&) { return 500; }
++int post(const std::string&, const char *, const char *, std::vector<u8>&) { return 500; }
++int post(const std::string&, const std::vector<PostField>&) { return 500; }
++
++}
++#endif // DISABLE_CURL
+ #endif	// !_WIN32
+ #endif	// !defined(__ANDROID__) && !defined(__APPLE__)

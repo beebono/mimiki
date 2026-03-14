@@ -14,8 +14,15 @@ static struct timespec last_wake_time = {0};
 static bool power_button_held = false;
 static bool mode_button_held = false;
 
-// Currently 4-100 in 7 steps of 16, default to ~50%
+// Brightness: 4-100% in 7 steps of 16, default to ~50%
 static int current_brightness = 52;
+
+// Volume: 0-65% in steps of 5, default to 50% to match init
+//         Specifically stops at 65% to prevent clipping in games
+#define VOLUME_MAX 65
+#define VOLUME_MIN 0
+#define VOLUME_STEP 5
+static int current_volume = 50;
 
 static int find_device_by_name(const char *device_name)
 {
@@ -150,7 +157,16 @@ bool input_monitor_check_hotkeys(void)
                 }
                 else
                 {
-                    system("amixer -q -c 0 sset 'Master' 5%+");
+                    if (current_volume < VOLUME_MAX)
+                    {
+                        current_volume += VOLUME_STEP;
+                        if (current_volume > VOLUME_MAX)
+                            current_volume = VOLUME_MAX;
+                        char cmd[128];
+                        snprintf(cmd, sizeof(cmd),
+                                 "amixer -q -c 0 sset 'Master' %d%%", current_volume);
+                        system(cmd);
+                    }
                 }
                 break;
 
@@ -172,7 +188,16 @@ bool input_monitor_check_hotkeys(void)
                 }
                 else
                 {
-                    system("amixer -q -c 0 sset 'Master' 5%-");
+                    if (current_volume > VOLUME_MIN)
+                    {
+                        current_volume -= VOLUME_STEP;
+                        if (current_volume < VOLUME_MIN)
+                            current_volume = VOLUME_MIN;
+                        char cmd[128];
+                        snprintf(cmd, sizeof(cmd),
+                                 "amixer -q -c 0 sset 'Master' %d%%", current_volume);
+                        system(cmd);
+                    }
                 }
                 break;
 

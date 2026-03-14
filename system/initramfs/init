@@ -93,7 +93,6 @@ mkdir -p /mnt/games
 mount "$PART_DEVICE" /mnt/games
 if [ $? -eq 0 ]; then
     echo "Creating game directories..."
-    mkdir -p /mnt/games/data/bios
     mkdir -p /mnt/games/data/saves
     mkdir -p /mnt/games/data/states
     mkdir -p /mnt/games/n64
@@ -107,8 +106,8 @@ MIMIKI - Game Storage
 Place your game ROMs in the appropriate directories:
 
   /n64   - .z64, .n64, .v64
-  /dc    - .chd, .gdi, .cdi       ! BIOS FILES REQUIRED UNDER /data/bios
-  /ps1   - .chd, .pbp, .bin/.cue  ! BIOS FILES REQUIRED UNDER /data/bios
+  /dc    - .chd, .gdi, .cdi       ! BIOS FILES REQUIRED UNDER /data
+  /ps1   - .chd, .pbp, .bin/.cue  ! BIOS FILES REQUIRED UNDER /data
   /psp   - .chd, .cso, .iso
 
 You can also make these same base folders on a second SD card

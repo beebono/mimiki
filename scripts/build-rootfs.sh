@@ -18,7 +18,6 @@ ROOTFS_FINAL="$BUILD_DIR/rootfs"
 ROOTFS_SQUASHFS="$BUILD_DIR/rootfs.squashfs"
 LAUNCHER_DIR="$REPO_ROOT/system/launcher"
 TOOLS_DIR="$REPO_ROOT/external/tools"
-CONFIG_DIR="$REPO_ROOT/system/config"
 BUSYBOX_DIR="$TOOLS_DIR/busybox"
 
 # Sysroots
@@ -168,12 +167,18 @@ install_libraries() {
     cp -L "$SYSROOT/libpng16.so.16" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libpng16 not found"
     cp -L "$SYSROOT/libz.so.1" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libz not found"
     # flycast
-    cp -L "$SYSROOT/libcurl.so.4" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libcurl not found"
     cp -L "$SYSROOT/libgomp.so.1" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libgomp not found"
     cp -L "$SYSROOT/libudev.so.1" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libudev not found"
-    cp -L "$SYSROOT/libmvec.so.1" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libmvec not found"
-    # TODO: duckstation
-    # TODO: ppsspp
+    cp -L "$SYSROOT/libcap.so.2" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libcap not found"
+    cp -L "$SYSROOT/libmvec.so.1" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libmvec not found"    
+    # duckstation
+    cp -L "$BUILD_DIR/duckstation-deps/lib/libshaderc_ds.so" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || \
+        print_warning "libshaderc_ds not found"
+    cp -L "$BUILD_DIR/duckstation-deps/lib/libspirv-cross-c-shared.so.0" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || \
+        print_warning "libspirv-cross-c-shared not found"
+    cp -L "$BUILD_DIR/duckstation-deps/lib/libsoundtouch.so.2" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || \
+        print_warning "libsoundtouch not found"
+    # ppsspp covered by previous libraries
 
     print_step "Libraries installed!"
 }
@@ -198,17 +203,11 @@ install_emulators() {
     print_step "Installing emulators..."
 
     if [ -d "$BUILD_DIR/emulators/mupen64plus" ]; then
-        mkdir -p "$ROOTFS_BUILD/root/.cache/mupen64plus"
-        mkdir -p "$ROOTFS_BUILD/root/.local/share/mupen64plus"
         mkdir -p "$ROOTFS_BUILD/root/.config/mupen64plus/"{data,plugins}
         cp -a "$BUILD_DIR/emulators/mupen64plus/lib/libmupen64plus.so.2" \
             "$ROOTFS_BUILD/usr/lib/"
         cp -a "$BUILD_DIR/emulators/mupen64plus/lib/plugins"/* \
             "$ROOTFS_BUILD/root/.config/mupen64plus/plugins/"
-        cp -a "$CONFIG_DIR/mupen64plus.cfg" \
-            "$ROOTFS_BUILD/root/.config/mupen64plus/"
-        cp -a "$CONFIG_DIR/InputAutoCfg.ini" \
-            "$ROOTFS_BUILD/root/.config/mupen64plus/data/"
         cp -a "$BUILD_DIR/emulators/mupen64plus/GLideN64.custom.ini" \
             "$ROOTFS_BUILD/root/.config/mupen64plus/data/"
         cp -a "$BUILD_DIR/emulators/mupen64plus/bin/mupen64plus" \
@@ -217,15 +216,15 @@ install_emulators() {
         print_step "mupen64plus installed!"
     fi
 
-    if [ -d "$BUILD_DIR/emulators/flycast/bin" ]; then
+    if [ -d "$BUILD_DIR/emulators/flycast" ]; then
+        mkdir -p "$ROOTFS_BUILD/root/.config/flycast"
         cp -a "$BUILD_DIR/emulators/flycast/bin/flycast" \
             "$ROOTFS_BUILD/usr/bin/"
-        
+
         print_step "flycast installed!"
     fi
 
     if [ -d "$BUILD_DIR/emulators/duckstation/resources" ]; then
-        mkdir -p "$ROOTFS_BUILD/root/.local/share/duckstation"
         cp -a "$BUILD_DIR/emulators/duckstation/duckstation-mini" \
             "$ROOTFS_BUILD/usr/bin/"
         cp -ar "$BUILD_DIR/emulators/duckstation/resources" \
@@ -235,9 +234,8 @@ install_emulators() {
     fi
 
     if [ -d "$BUILD_DIR/emulators/ppsspp/bin" ]; then
-        mkdir -p "$ROOTFS_BUILD/root/.config/ppsspp/assets"
         cp -ar "$BUILD_DIR/emulators/ppsspp/assets"/* \
-            "$ROOTFS_BUILD/root/.config/ppsspp/assets/"
+            "$ROOTFS_BUILD/root/.local/share/ppsspp/assets/"
         cp -a "$BUILD_DIR/emulators/ppsspp/bin/PPSSPPSDL" \
             "$ROOTFS_BUILD/usr/bin/"
 

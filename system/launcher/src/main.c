@@ -54,7 +54,7 @@ static const char *psp_exts[] = {".iso", ".cso", ".chd", NULL};
 static System systems[MAX_SYSTEMS] = {
     {"Nintendo 64", "n64", "mupen64plus", n64_exts, {}, 0},
     {"Dreamcast", "dc", "flycast", dc_exts, {}, 0},
-    {"PlayStation", "ps1", "duckstation-nogui", ps1_exts, {}, 0},
+    {"PlayStation", "ps1", "duckstation-mini", ps1_exts, {}, 0},
     {"PS Portable", "psp", "PPSSPPSDL", psp_exts, {}, 0}};
 
 static bool has_extension(const char *filename, const char **extensions)
@@ -159,6 +159,22 @@ static void scan_games(System *system)
                 if (dot)
                     *dot = '\0';
 
+                // Remove parenthesized, bracketed, and braced annotations (e.g. "(USA)", "[!]", "{v1.0}")
+                static const char open_brackets[]  = "([{";
+                static const char close_brackets[] = ")]}";
+                for (int b = 0; b < 3; b++) {
+                    char *open = game->name;
+                    while ((open = strchr(open, open_brackets[b])) != NULL) {
+                        char *close = strchr(open, close_brackets[b]);
+                        if (!close) break;
+                        memmove(open, close + 1, strlen(close + 1) + 1);
+                    }
+                }
+                // Trim trailing whitespace left behind
+                char *end = game->name + strlen(game->name) - 1;
+                while (end > game->name && *end == ' ')
+                    *end-- = '\0';
+
                 // Full path
                 snprintf(game->path, sizeof(game->path), "%s/%s",
                          rom_dir, entry->d_name);
@@ -207,6 +223,7 @@ static bool load_font(void)
 
 static bool init_sdl(void)
 {
+    setenv("SDL_VIDEODRIVER", "kmsdrm", 1);
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) < 0)
     {
         fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
@@ -354,14 +371,14 @@ static void render_system_menu(void)
 
         // Selection indicator
         if (selected)
-            draw_text(120, y, ">", true);
+            draw_text(80, y, ">", true);
 
-        draw_text(150, y, systems[i].name, selected);
+        draw_text(110, y, systems[i].name, selected);
 
         // Game count
         char count[32];
         snprintf(count, sizeof(count), "(%d games)", systems[i].game_count);
-        draw_text(400, y, count, false);
+        draw_text(380, y, count, false);
 
         y += 50;
     }
@@ -371,6 +388,13 @@ static void render_system_menu(void)
 
     SDL_RenderPresent(renderer);
 }
+
+// Max characters that fit in the game name column (x=110 to x=630, 16px/char)
+#define GAME_NAME_MAX_CHARS 27
+
+static int   scroll_offset     = 0;
+static int   last_scrolled_game = -1;
+static Uint32 scroll_last_ms   = 0;
 
 static void render_game_menu(void)
 {
@@ -384,6 +408,22 @@ static void render_game_menu(void)
     int title_x = (SCREEN_WIDTH - title_width) / 2;
     draw_text(title_x, 40, sys->name, false);
 
+    // Advance scroll state for the selected game
+    Uint32 now = SDL_GetTicks();
+    if (current_game != last_scrolled_game) {
+        scroll_offset      = 0;
+        scroll_last_ms     = now;
+        last_scrolled_game = current_game;
+    } else if (now - scroll_last_ms >= 500) {
+        int name_len = (int)strlen(sys->games[current_game].name);
+        if (name_len > GAME_NAME_MAX_CHARS) {
+            scroll_offset++;
+            if (scroll_offset + GAME_NAME_MAX_CHARS > name_len)
+                scroll_offset = 0;
+        }
+        scroll_last_ms = now;
+    }
+
     // Game list
     int games_per_page = 10;
     int start_idx = (current_game / games_per_page) * games_per_page;
@@ -392,12 +432,27 @@ static void render_game_menu(void)
     for (int i = start_idx; i < start_idx + games_per_page && i < sys->game_count; i++)
     {
         bool selected = (i == current_game);
+        const char *full_name = sys->games[i].name;
+        int name_len = (int)strlen(full_name);
+
+        // Build display name: scroll if selected & long, truncate otherwise
+        char display_name[GAME_NAME_MAX_CHARS + 1];
+        if (name_len <= GAME_NAME_MAX_CHARS) {
+            strncpy(display_name, full_name, sizeof(display_name));
+        } else if (selected) {
+            strncpy(display_name, full_name + scroll_offset, GAME_NAME_MAX_CHARS);
+            display_name[GAME_NAME_MAX_CHARS] = '\0';
+        } else {
+            strncpy(display_name, full_name, GAME_NAME_MAX_CHARS - 3);
+            display_name[GAME_NAME_MAX_CHARS - 3] = '\0';
+            strcat(display_name, "...");
+        }
 
         // Selection indicator
         if (selected)
             draw_text(80, y, ">", true);
 
-        draw_text(110, y, sys->games[i].name, selected);
+        draw_text(110, y, display_name, selected);
         y += 30;
     }
 
@@ -424,7 +479,8 @@ static void launch_game(System *sys, Game *game)
     cleanup_sdl();
 
     const char *gpu_gov = "simple_ondemand";
-    if (strcmp(sys->short_name, "n64") == 0)
+    if ((strcmp(sys->short_name, "n64") == 0) ||
+        (strcmp(sys->short_name, "dc") == 0))
         gpu_gov = "performance";
 
     set_cpu_governor("schedutil");
@@ -436,19 +492,19 @@ static void launch_game(System *sys, Game *game)
         // Child process
         if (strcmp(sys->short_name, "n64") == 0)
         {
-            execl("/usr/bin/mupen64plus", "mupen64plus", "--fullscreen", game->path, (char *)NULL);
+            execl("/usr/bin/mupen64plus", sys->emulator, game->path, (char *)NULL);
         }
         else if (strcmp(sys->short_name, "dc") == 0)
         {
-            execl("/usr/bin/flycast", "flycast", game->path, (char *)NULL);
+            execl("/usr/bin/flycast", sys->emulator, game->path, (char *)NULL);
         }
         else if (strcmp(sys->short_name, "ps1") == 0)
         {
-            execl("/usr/bin/duckstation-nogui", "duckstation-nogui", game->path, (char *)NULL);
+            execl("/usr/bin/duckstation-mini", sys->emulator, game->path, (char *)NULL);
         }
         else if (strcmp(sys->short_name, "psp") == 0)
         {
-            execl("/usr/bin/PPSSPPSDL", "PPSSPPSDL", game->path, (char *)NULL);
+            execl("/usr/bin/PPSSPPSDL", sys->emulator, game->path, (char *)NULL);
         }
 
         fprintf(stderr, "Failed to launch %s: %s\n", sys->emulator, strerror(errno));
@@ -467,7 +523,7 @@ static void launch_game(System *sys, Game *game)
             usleep(50000);
         }
 
-        printf("Emulator exited.\n");
+        printf("Emulator exited\n");
     }
     else
     {
@@ -519,7 +575,8 @@ static void handle_input(SDL_Event *event)
             }
             break;
 
-        case SDL_CONTROLLER_BUTTON_A:
+        // A Button on Device = East button (SDL B)
+        case SDL_CONTROLLER_BUTTON_B:
             if (in_game_list)
             {
                 System *sys = &systems[current_system];
@@ -537,7 +594,8 @@ static void handle_input(SDL_Event *event)
             }
             break;
 
-        case SDL_CONTROLLER_BUTTON_B:
+        // B Button on Device = South button (SDL A)
+        case SDL_CONTROLLER_BUTTON_A:
             if (in_game_list)
             {
                 in_game_list = false;

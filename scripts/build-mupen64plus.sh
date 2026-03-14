@@ -22,6 +22,7 @@ export CROSS_COMPILE=aarch64-linux-gnu-
 CMAKE_TC="$REPO_ROOT/system/config/toolchain-aarch64-linux-gnu.cmake"
 HOST=aarch64-linux-gnu
 JOBS=$(nproc)
+COMPFLAGS="-Ofast -march=armv8-a+simd -mtune=cortex-a55 -flto=auto"
 
 # Component directories
 CORE_DIR="$M64P_DIR/core"
@@ -82,7 +83,7 @@ build_core() {
 
     make -j${JOBS} all \
         HOST_CPU=aarch64 CROSS_COMPILE="${CROSS_COMPILE}" PKG_CONFIG="${PKG_CONFIG}" \
-        APIDIR="${API_DIR}" OPTFLAGS="-Ofast -flto=auto" USE_GLES=1 VULKAN=1 \
+        APIDIR="${API_DIR}" OPTFLAGS="${COMPFLAGS}" USE_GLES=1 VULKAN=1 \
         OSD=0 NETPLAY=0 NEW_DYNAREC=1 PIC=1 PREFIX=/usr
 
     if [ ! -f "$CORE_DIR/projects/unix/libmupen64plus.so.2.0.0" ]; then
@@ -100,7 +101,7 @@ build_audio_sdl() {
 
     make -j${JOBS} all \
         HOST_CPU=aarch64 CROSS_COMPILE="${CROSS_COMPILE}" PKG_CONFIG="${PKG_CONFIG}" \
-        APIDIR="${API_DIR}" OPTFLAGS="-Ofast -flto=auto" PIC=1 NO_SRC=1 NO_SPEEX=1 NO_OSS=1 \
+        APIDIR="${API_DIR}" OPTFLAGS="${COMPFLAGS}" PIC=1 NO_SRC=1 NO_SPEEX=1 NO_OSS=1 \
         PREFIX=/usr
 
     if [ ! -f "$AUDIO_SDL_DIR/projects/unix/mupen64plus-audio-sdl.so" ]; then
@@ -118,7 +119,7 @@ build_input_sdl() {
 
     make -j${JOBS} all \
         HOST_CPU=aarch64 CROSS_COMPILE="${CROSS_COMPILE}" PKG_CONFIG="${PKG_CONFIG}" \
-        APIDIR="${API_DIR}" OPTFLAGS="-Ofast -flto=auto" PIC=1 PREFIX=/usr
+        APIDIR="${API_DIR}" OPTFLAGS="${COMPFLAGS}" PIC=1 PREFIX=/usr
 
     if [ ! -f "$INPUT_SDL_DIR/projects/unix/mupen64plus-input-sdl.so" ]; then
         print_error "Input plugin build failed!"
@@ -135,7 +136,7 @@ build_rsp_hle() {
 
     make -j${JOBS} all \
         HOST_CPU=aarch64 CROSS_COMPILE="${CROSS_COMPILE}" PKG_CONFIG="${PKG_CONFIG}" \
-        APIDIR="${API_DIR}" OPTFLAGS="-Ofast -flto=auto" PIC=1 PREFIX=/usr
+        APIDIR="${API_DIR}" OPTFLAGS="${COMPFLAGS}" PIC=1 PREFIX=/usr
 
     if [ ! -f "$RSP_HLE_DIR/projects/unix/mupen64plus-rsp-hle.so" ]; then
         print_error "RSP HLE plugin build failed!"
@@ -170,7 +171,7 @@ build_ui_console() {
 
     make -j${JOBS} all \
         HOST_CPU=aarch64 CROSS_COMPILE=${CROSS_COMPILE} PKG_CONFIG="${PKG_CONFIG}" \
-        APIDIR="${API_DIR}" OPTFLAGS="-Ofast -flto=auto" PIE=1 PREFIX=/usr
+        APIDIR="${API_DIR}" OPTFLAGS="${COMPFLAGS}" PIE=1 PREFIX=/usr
 
     if [ ! -f "$UI_CONSOLE_DIR/projects/unix/mupen64plus" ]; then
         print_error "UI console build failed!"
