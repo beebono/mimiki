@@ -155,12 +155,7 @@ install_libraries() {
     cp -a "$SYSROOT"/libdrm.so* "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libdrm not found"
 
     # Additional libraries (SDL2)
-    local SDL2_INSTALL="$BUILD_DIR/sdl2-install"
-    if [ -d "$SDL2_INSTALL/usr/lib" ]; then
-        cp -a "$SDL2_INSTALL"/usr/lib/libSDL2*.so* "$ROOTFS_BUILD/usr/lib/"
-    else
-        print_warning "Custom SDL2 not found! Run 'make launcher' first."
-    fi
+    cp -a "$BUILD_DIR"/sdl2-install/usr/lib/libSDL2*.so* "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "SDL2 not found"
 
     # Additional libraries (Emulators)
     # mupen64plus
@@ -171,13 +166,8 @@ install_libraries() {
     cp -L "$SYSROOT/libudev.so.1" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libudev not found"
     cp -L "$SYSROOT/libcap.so.2" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libcap not found"
     cp -L "$SYSROOT/libmvec.so.1" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libmvec not found"    
-    # duckstation
-    cp -L "$BUILD_DIR/duckstation-deps/lib/libshaderc_ds.so" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || \
-        print_warning "libshaderc_ds not found"
-    cp -L "$BUILD_DIR/duckstation-deps/lib/libspirv-cross-c-shared.so.0" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || \
-        print_warning "libspirv-cross-c-shared not found"
-    cp -L "$BUILD_DIR/duckstation-deps/lib/libsoundtouch.so.2" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || \
-        print_warning "libsoundtouch not found"
+    # pcsx
+    cp -L "$BUILD_DIR/sdl12-install/usr/lib/libSDL-1.2.so.0" "$ROOTFS_BUILD/usr/lib" 2>/dev/null || print_warning "sdl12-compat not found"
     # ppsspp covered by previous libraries
 
     print_step "Libraries installed!"
@@ -224,18 +214,16 @@ install_emulators() {
         print_step "flycast installed!"
     fi
 
-    if [ -d "$BUILD_DIR/emulators/duckstation/resources" ]; then
-        cp -a "$BUILD_DIR/emulators/duckstation/duckstation-mini" \
+    if [ -d "$BUILD_DIR/emulators/pcsx" ]; then
+        cp -a "$BUILD_DIR/emulators/pcsx/bin/pcsx" \
             "$ROOTFS_BUILD/usr/bin/"
-        cp -ar "$BUILD_DIR/emulators/duckstation/resources" \
-            "$ROOTFS_BUILD/root/.local/share/duckstation/"
 
-        print_step "duckstation installed!"
+        print_step "pcsx-rearmed installed!"
     fi
 
     if [ -d "$BUILD_DIR/emulators/ppsspp/bin" ]; then
         cp -ar "$BUILD_DIR/emulators/ppsspp/assets"/* \
-            "$ROOTFS_BUILD/root/.local/share/ppsspp/assets/"
+            "$ROOTFS_BUILD/usr/bin/assets/"
         cp -a "$BUILD_DIR/emulators/ppsspp/bin/PPSSPPSDL" \
             "$ROOTFS_BUILD/usr/bin/"
 

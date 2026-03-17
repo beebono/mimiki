@@ -1,0 +1,53 @@
+diff --git a/UI/EmuScreen.cpp b/UI/EmuScreen.cpp
+index 3317196267..189f6e8a5c 100644
+--- a/UI/EmuScreen.cpp
++++ b/UI/EmuScreen.cpp
+@@ -860,6 +860,17 @@ void EmuScreen::OnVKey(VirtKey virtualKeyCode, bool down) {
+ 	case VIRTKEY_RAPID_FIRE:
+ 		__CtrlSetRapidFire(down, g_Config.iRapidFireInterval);
+ 		break;
++	case VIRTKEY_PAUSE_NO_MENU:
++		if (!NetworkWarnUserIfOnlineAndCantSpeed()) {
++			if (down && coreState != CORE_STEPPING_CPU) {
++				pausedByHotkey_ = true;
++				Core_Break(BreakReason::UIPause);
++			} else if (!down && pausedByHotkey_) {
++				pausedByHotkey_ = false;
++				Core_Resume();
++			}
++		}
++		break;
+ 	default:
+ 		// To make sure we're not in an async context.
+ 		if (down) {
+@@ -1031,17 +1042,6 @@ void EmuScreen::ProcessVKey(VirtKey virtKey) {
+ 		}
+ 		break;
+ 
+-	case VIRTKEY_PAUSE_NO_MENU:
+-		if (!NetworkWarnUserIfOnlineAndCantSpeed()) {
+-			// We re-use debug break/resume to implement pause/resume without a menu.
+-			if (coreState == CORE_STEPPING_CPU) {  // should we check reason?
+-				Core_Resume();
+-			} else {
+-				Core_Break(BreakReason::UIPause);
+-			}
+-		}
+-		break;
+-
+ 	case VIRTKEY_EXIT_APP:
+ 	{
+ 		if (!bootPending_) {
+diff --git a/UI/EmuScreen.h b/UI/EmuScreen.h
+index 81dd030ae2..88c3c96000 100644
+--- a/UI/EmuScreen.h
++++ b/UI/EmuScreen.h
+@@ -113,6 +113,8 @@ class EmuScreen : public UIScreen, protected ControlListener {
+ 
+ 	// If set, pauses at the end of the frame.
+ 	bool pauseTrigger_ = false;
++	// Set when Pause (no menu) is triggered by a held hotkey, so release can resume.
++	bool pausedByHotkey_ = false;
+ 
+ 	// The last read chat message count, and how many new ones there are.
+ 	int chatMessages_ = 0;

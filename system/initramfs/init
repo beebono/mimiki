@@ -93,8 +93,10 @@ mkdir -p /mnt/games
 mount "$PART_DEVICE" /mnt/games
 if [ $? -eq 0 ]; then
     echo "Creating game directories..."
+    mkdir -p /mnt/games/data/ppsspp/PSP/SYSTEM
     mkdir -p /mnt/games/data/saves
     mkdir -p /mnt/games/data/states
+    mkdir -p /mnt/games/data/.cache
     mkdir -p /mnt/games/n64
     mkdir -p /mnt/games/dc
     mkdir -p /mnt/games/ps1

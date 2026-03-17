@@ -26,9 +26,6 @@
 [submodule "external/mupen64plus/audio-sdl"]
 	path = external/emulators/mupen64plus/audio-sdl
 	url = https://github.com/mupen64plus/mupen64plus-audio-sdl.git
-[submodule "external/duckstation"]
-	path = external/emulators/duckstation
-	url = https://github.com/stenzek/duckstation.git
 [submodule "external/flycast"]
 	path = external/emulators/flycast
 	url = https://github.com/flyinghead/flycast.git
@@ -61,3 +58,9 @@
 [submodule "external/emulators/mupen64plus/video-gliden64"]
 	path = external/emulators/mupen64plus/video-gliden64
 	url = https://github.com/gonetz/GLideN64.git
+[submodule "external/emulators/pcsx-rearmed"]
+	path = external/emulators/pcsx-rearmed
+	url = https://github.com/notaz/pcsx_rearmed.git
+[submodule "external/tools/sdl12-compat"]
+	path = external/tools/sdl12-compat
+	url = https://github.com/libsdl-org/sdl12-compat.git

@@ -12,14 +12,10 @@
 #define SCREEN_WIDTH 640
 #define SCREEN_HEIGHT 480
 
-// Colors
-#define COLOR_BACKGROUND 0x000000
-#define COLOR_TEXT 0xFFFFFF
-#define COLOR_SELECTED 0x00FF00
-
 // Menu
 #define MAX_SYSTEMS 4
 #define MAX_GAMES 256
+#define BATTERY_READ_MS 1750
 
 typedef struct
 {
@@ -46,6 +42,10 @@ static int current_game = 0;
 static bool in_game_list = false;
 bool backlight_on = false;
 
+static int battery_capacity = -1;
+static bool battery_charging = false;
+static Uint32 battery_last_read  = 0;
+
 static const char *n64_exts[] = {".z64", ".n64", ".v64", NULL};
 static const char *dc_exts[] = {".gdi", ".cdi", ".chd", NULL};
 static const char *ps1_exts[] = {".cue", ".chd", ".pbp", NULL};
@@ -54,7 +54,7 @@ static const char *psp_exts[] = {".iso", ".cso", ".chd", NULL};
 static System systems[MAX_SYSTEMS] = {
     {"Nintendo 64", "n64", "mupen64plus", n64_exts, {}, 0},
     {"Dreamcast", "dc", "flycast", dc_exts, {}, 0},
-    {"PlayStation", "ps1", "duckstation-mini", ps1_exts, {}, 0},
+    {"PlayStation", "ps1", "pcsx", ps1_exts, {}, 0},
     {"PS Portable", "psp", "PPSSPPSDL", psp_exts, {}, 0}};
 
 static bool has_extension(const char *filename, const char **extensions)
@@ -304,15 +304,12 @@ static void cleanup_sdl(void)
     SDL_Quit();
 }
 
-static void draw_text(int x, int y, const char *text, bool selected)
+static void draw_text_rgb(int x, int y, const char *text, Uint8 r, Uint8 g, Uint8 b)
 {
     if (!text || !font_texture)
         return;
 
-    if (selected)
-        SDL_SetTextureColorMod(font_texture, 100, 255, 100);
-    else
-        SDL_SetTextureColorMod(font_texture, 255, 255, 255);
+    SDL_SetTextureColorMod(font_texture, r, g, b);
 
     int cursor_x = x;
     int cursor_y = y;
@@ -333,19 +330,8 @@ static void draw_text(int x, int y, const char *text, bool selected)
         int atlas_x = (char_index % FONT_ATLAS_COLS) * FONT_CHAR_WIDTH;
         int atlas_y = (char_index / FONT_ATLAS_COLS) * FONT_CHAR_HEIGHT;
 
-        // Source rect from atlas
-        SDL_Rect src_rect = {
-            atlas_x,
-            atlas_y,
-            FONT_CHAR_WIDTH,
-            FONT_CHAR_HEIGHT};
-
-        // Destination rect on screen
-        SDL_Rect dst_rect = {
-            cursor_x,
-            cursor_y,
-            FONT_CHAR_WIDTH,
-            FONT_CHAR_HEIGHT};
+        SDL_Rect src_rect = {atlas_x, atlas_y, FONT_CHAR_WIDTH, FONT_CHAR_HEIGHT};
+        SDL_Rect dst_rect = {cursor_x, cursor_y, FONT_CHAR_WIDTH, FONT_CHAR_HEIGHT};
 
         SDL_RenderCopy(renderer, font_texture, &src_rect, &dst_rect);
 
@@ -355,6 +341,134 @@ static void draw_text(int x, int y, const char *text, bool selected)
     SDL_SetTextureColorMod(font_texture, 255, 255, 255);
 }
 
+static void draw_text(int x, int y, const char *text, bool selected)
+{
+    if (selected)
+        draw_text_rgb(x, y, text, 100, 255, 100);
+    else
+        draw_text_rgb(x, y, text, 255, 255, 255);
+}
+
+static char batt_cap_path[80]  = "";
+static char batt_stat_path[80] = "";
+
+static bool find_battery_supply(void)
+{
+    DIR *dir = opendir("/sys/class/power_supply");
+    if (!dir)
+        return false;
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL)
+    {
+        if (entry->d_name[0] == '.')
+            continue;
+
+        char type_path[96];
+        snprintf(type_path, sizeof(type_path),
+                 "/sys/class/power_supply/%s/type", entry->d_name);
+
+        FILE *fp = fopen(type_path, "r");
+        if (!fp)
+            continue;
+
+        char type[32] = {0};
+        fgets(type, sizeof(type), fp);
+        fclose(fp);
+
+        if (strncmp(type, "Battery", 7) == 0)
+        {
+            snprintf(batt_cap_path, sizeof(batt_cap_path),
+                     "/sys/class/power_supply/%s/capacity", entry->d_name);
+            snprintf(batt_stat_path, sizeof(batt_stat_path),
+                     "/sys/class/power_supply/%s/status", entry->d_name);
+            printf("Battery supply found: %s\n", entry->d_name);
+            closedir(dir);
+            return true;
+        }
+    }
+
+    closedir(dir);
+    return false;
+}
+
+static void read_battery(void)
+{
+    if (batt_cap_path[0] == '\0')
+    {
+        if (!find_battery_supply())
+        {
+            battery_capacity = -1;
+            return;
+        }
+    }
+
+    Uint32 now = SDL_GetTicks();
+    if (battery_capacity >= 0 && (now - battery_last_read) < BATTERY_READ_MS)
+        return;
+    battery_last_read = now;
+
+    FILE *fp = fopen(batt_cap_path, "r");
+    if (fp) {
+        if (fscanf(fp, "%d", &battery_capacity) != 1)
+            battery_capacity = -1;
+        fclose(fp);
+    }
+
+    fp = fopen(batt_stat_path, "r");
+    if (fp) {
+        char status[32] = {0};
+        fgets(status, sizeof(status), fp);
+        fclose(fp);
+        battery_charging = (strncmp(status, "Charging", 8) == 0);
+    } else {
+        battery_charging = false;
+    }
+}
+
+// Battery indicator
+// Thresholds: 4=100-75%, 3=74-50%, 2=49-25%, 1=24-10%, 0=9-0% (red)
+static void draw_battery(int x, int y)
+{
+    read_battery();
+    if (battery_capacity < 0)
+        return;
+
+    int capacity = battery_capacity;
+    int level;
+    Uint8 r = 255, g = 255, b = 255;
+
+    if (battery_charging && capacity >= 95) {
+        level = 4;
+        r = 0; g = 255; b = 0;
+    } else if (battery_charging) {
+        // Animate: cycle 1>2>3>4 every 600 ms
+        level = (int)((SDL_GetTicks() / 600) % 4) + 1;
+        r = 0; g = 255; b = 0;
+    } else if (capacity < 10) {
+        level = 0;
+        r = 255; g = 0; b = 0;
+    } else if (capacity < 25) {
+        level = 1;
+    } else if (capacity < 50) {
+        level = 2;
+    } else if (capacity < 75) {
+        level = 3;
+    } else {
+        level = 4;
+    }
+
+    // ASCII Art Battery Builder
+    char indicator[7];
+    indicator[0] = '{';
+    for (int i = 0; i < 4; i++)
+        indicator[1 + i] = (i >= 4 - level) ? '*' : ' ';
+    indicator[5] = ']';
+    indicator[6] = '\0';
+
+    draw_text_rgb(x, y, indicator, r, g, b);
+}
+
 static void render_system_menu(void)
 {
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
@@ -362,6 +476,9 @@ static void render_system_menu(void)
 
     // Title
     draw_text(272, 40, "MIMIKI", false);
+
+    // Battery indicator
+    draw_battery(498, 40);
 
     // System list
     int y = 120;
@@ -407,6 +524,9 @@ static void render_game_menu(void)
     int title_width = strlen(sys->name) * FONT_CHAR_WIDTH;
     int title_x = (SCREEN_WIDTH - title_width) / 2;
     draw_text(title_x, 40, sys->name, false);
+
+    // Battery indicator
+    draw_battery(498, 40);
 
     // Advance scroll state for the selected game
     Uint32 now = SDL_GetTicks();
@@ -479,8 +599,7 @@ static void launch_game(System *sys, Game *game)
     cleanup_sdl();
 
     const char *gpu_gov = "simple_ondemand";
-    if ((strcmp(sys->short_name, "n64") == 0) ||
-        (strcmp(sys->short_name, "dc") == 0))
+    if (strcmp(sys->short_name, "n64") == 0)
         gpu_gov = "performance";
 
     set_cpu_governor("schedutil");
@@ -492,6 +611,7 @@ static void launch_game(System *sys, Game *game)
         // Child process
         if (strcmp(sys->short_name, "n64") == 0)
         {
+            setenv("XDG_CACHE_HOME", "/mnt/games/data/.cache", 1);
             execl("/usr/bin/mupen64plus", sys->emulator, game->path, (char *)NULL);
         }
         else if (strcmp(sys->short_name, "dc") == 0)
@@ -500,10 +620,11 @@ static void launch_game(System *sys, Game *game)
         }
         else if (strcmp(sys->short_name, "ps1") == 0)
         {
-            execl("/usr/bin/duckstation-mini", sys->emulator, game->path, (char *)NULL);
+            execl("/usr/bin/pcsx", sys->emulator, "-cdfile", game->path, (char *)NULL);
         }
         else if (strcmp(sys->short_name, "psp") == 0)
         {
+            setenv("XDG_CONFIG_HOME", "/mnt/games/data", 1);
             execl("/usr/bin/PPSSPPSDL", sys->emulator, game->path, (char *)NULL);
         }
 
@@ -518,7 +639,7 @@ static void launch_game(System *sys, Game *game)
             if (input_monitor_check_hotkeys()) {
                 kill(pid, SIGTERM); // rcK handles reaping
                 // Don't bother changing governor here since it's going down soon anyway
-                goto powoff;
+                return;
             }
             usleep(50000);
         }
@@ -534,7 +655,6 @@ static void launch_game(System *sys, Game *game)
     set_cpu_governor("powersave");
     set_gpu_governor("powersave");
 
-powoff:
     init_sdl();
 }
 
@@ -636,11 +756,13 @@ int main()
             render_system_menu();
 
         if (input_monitor_check_hotkeys()) {
-            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-            SDL_RenderClear(renderer);
-            draw_text(460, 400, "mata ne!", false);
-            SDL_RenderPresent(renderer);
-            SDL_Delay(1000);
+            if (renderer) {
+                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+                SDL_RenderClear(renderer);
+                draw_text(460, 400, "mata ne!", false);
+                SDL_RenderPresent(renderer);
+                SDL_Delay(1000);
+            }
             system("poweroff");
             break;
         }

@@ -15,11 +15,13 @@ BUILD_DIR="$REPO_ROOT/build"
 TOOLS_DIR="$REPO_ROOT/external/tools"
 CONFIG_DIR="$REPO_ROOT/system/config"
 SDL2_INSTALL="$BUILD_DIR/sdl2-install"
+SDL12_INSTALL="$BUILD_DIR/sdl12-install"
 
 # Build configuration
 CROSS_COMPILE=aarch64-linux-gnu-
 ARCH=arm64
 HOST=aarch64-linux-gnu
+CMAKE_TC="$REPO_ROOT/system/config/toolchain-aarch64-linux-gnu.cmake"
 
 print_step() {
     echo -e "${GREEN}==>${NC} $1" >&2
@@ -203,6 +205,18 @@ configure_tool() {
                 --disable-xmlto \
                 --with-curses=ncurses
             ;;
+
+        sdl12-compat)
+            mkdir -p "$build_dir"
+            cd "$build_dir"
+
+            cmake "$tool_dir" \
+                -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TC" \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX=/usr \
+                -DSDL2_INCLUDE_DIR="$SDL2_INSTALL/usr/include/SDL2" \
+                -DSDL2_LIBRARY="$SDL2_INSTALL/usr/lib/libSDL2.so"
+            ;;
     esac
 
     print_step "$tool configured!"
@@ -235,6 +249,11 @@ build_tool() {
             cd "$build_dir"
             make -j"$(nproc)"
             ;;
+
+        sdl12-compat)
+            cd "$build_dir"
+            cmake --build . -j"$(nproc)"
+            ;;
     esac
 
     print_step "$tool built!"
@@ -260,6 +279,15 @@ install_SDL2_image() {
     print_step "SDL2_image installed to $SDL2_INSTALL!"
 }
 
+install_sdl12_compat() {
+    print_step "Installing sdl12-compat to staging directory..."
+
+    cd "$TOOLS_DIR/sdl12-compat/build"
+    DESTDIR="$SDL12_INSTALL" cmake --install . --prefix /usr
+
+    print_step "sdl12-compat installed to $SDL12_INSTALL!"
+}
+
 build_all_tools() {
     # Build tools that don't depend on others first
     local basic_tools=(busybox exfatprogs gptfdisk alsa-utils)
@@ -278,6 +306,11 @@ build_all_tools() {
     configure_tool "SDL2_image"
     build_tool "SDL2_image"
     install_SDL2_image
+
+    # Finally build sdl12-compat against SDL2
+    configure_tool "sdl12-compat"
+    build_tool "sdl12-compat"
+    install_sdl12_compat
 }
 
 main() {

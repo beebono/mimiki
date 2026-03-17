@@ -121,6 +121,6 @@ clean-all: clean
 	@rm -r external/emulators/mupen64plus/video-gliden64/build 2>/dev/null || true
 	@$(MAKE) -C external/emulators/mupen64plus/ui-console/projects/unix APIDIR=. clean || true
 	@rm -r external/emulators/flycast/build 2>/dev/null || true
-	@rm -r external/emulators/duckstation/build 2>/dev/null || true
+	@$(MAKE) -C external/emulators/pcsx-rearmed clean || true
 	@rm -r external/emulators/ppsspp/build 2>/dev/null || true
 	$(call MSG_SUCCESS,All clean!)

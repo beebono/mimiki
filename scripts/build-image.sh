@@ -2,9 +2,6 @@
 # MIMIKI - SD Card Image Creation Script
 set -e
 
-# Round up to next power of 2 from a given size in bytes
-next_power2() { echo "x=l($1)/l(2); scale=0; 2^((x+0.999)/1)" | bc -l; }
-
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -18,15 +15,14 @@ BOOTLOADER_DIR="$BUILD_DIR/boot"
 ROOTFS_SQUASHFS="$BUILD_DIR/rootfs.squashfs"
 OUTPUT_DIR="$BUILD_DIR/images"
 
-# Root size auto calculation
+# Root size auto calculation (round up to next MiB)
 ROOTFS_SIZE=$(stat -c%s "$ROOTFS_SQUASHFS")
-ROOTFS_SIZE_BYTES=$(next_power2 "$ROOTFS_SIZE")
 
 # Partition sizes (in MB)
 RESERVE_SIZE_MB=8
 UBOOT_SIZE_MB=8
 BOOT_SIZE_MB=32
-ROOT_SIZE_MB=$(( ROOTFS_SIZE_BYTES / 1048576 ))
+ROOT_SIZE_MB=$(( (ROOTFS_SIZE + 1048575) / 1048576 ))
 if [ $ROOT_SIZE_MB -lt 32 ]; then
     ROOT_SIZE_MB=32
 fi

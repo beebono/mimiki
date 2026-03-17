@@ -1,8 +1,8 @@
 # MIMIKI - Minimal Miyoo Kiosk
 
 A minimal emulation platform for the Miyoo Flip (RK3566).
-MIMIKI provides a lightweight Linux OS image with a custom SDL2 launcher and pre-configured emulators
-for N64, Dreamcast, PS1, and PSP.
+MIMIKI provides a lightweight Linux OS image with a custom SDL2 launcher and pre-configured
+emulators for N64, Dreamcast, PS1, and PSP.
 
 ---
 
@@ -122,11 +122,11 @@ These same directories can be created on a second SD card if you prefer separate
 
 ## Supported Emulators
 
-| System      | Core        |
+| System      | Emulator    |
 |-------------|-------------|
 | N64         | mupen64plus |
 | Dreamcast   | Flycast     |
-| PlayStation | DuckStation |
+| PlayStation | PCSXReARMed |
 | PSP         | PPSSPP      |
 
 ---

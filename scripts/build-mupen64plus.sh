@@ -83,7 +83,7 @@ build_core() {
 
     make -j${JOBS} all \
         HOST_CPU=aarch64 CROSS_COMPILE="${CROSS_COMPILE}" PKG_CONFIG="${PKG_CONFIG}" \
-        APIDIR="${API_DIR}" OPTFLAGS="${COMPFLAGS}" USE_GLES=1 VULKAN=1 \
+        APIDIR="${API_DIR}" OPTFLAGS="${COMPFLAGS}" USE_GLES=1 VULKAN=0 \
         OSD=0 NETPLAY=0 NEW_DYNAREC=1 PIC=1 PREFIX=/usr
 
     if [ ! -f "$CORE_DIR/projects/unix/libmupen64plus.so.2.0.0" ]; then
@@ -154,8 +154,8 @@ build_video_gliden64() {
     cd build
     cmake ../src \
         -DCMAKE_TOOLCHAIN_FILE="${CMAKE_TC}" -DCMAKE_BUILD_TYPE=Release \
-        -DEGL=ON -DMUPENPLUSAPI=ON -DMESA=ON -DNO_OSD=ON -DNOHQ=ON -DVEC4_OPT=ON -DCRC_OPT=ON \
-        -DNEON_OPT=ON -DUNIX=ON
+        -DEGL=ON -DMUPENPLUSAPI=ON -DMESA=ON -DNO_OSD=ON -DNOHQ=ON -DVEC4_OPT=ON \
+        -DCRC_OPT=ON -DNEON_OPT=ON -DUNIX=ON
     make -j${JOBS}
 
     if [ ! -f "$VIDEO_GLIDEN64_DIR/build/plugin/Release/mupen64plus-video-GLideN64.so" ]; then

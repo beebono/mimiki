@@ -1,0 +1,71 @@
+diff --git a/frontend/main.c b/frontend/main.c
+index 267eb840..dac10181 100644
+--- a/frontend/main.c
++++ b/frontend/main.c
+@@ -275,6 +275,9 @@ do_state_slot:
+ 		ret = padToggleAnalog(0);
+ 		snprintf(hud_msg, sizeof(hud_msg), "ANALOG %s", ret ? "ON" : "OFF");
+ 		break;
++	case SACTION_QUIT:
++		g_emu_want_quit = 1;
++		return;
+ 	default:
+ 		return;
+ 	}
+diff --git a/frontend/main.h b/frontend/main.h
+index 57f27c1d..ceac52c4 100644
+--- a/frontend/main.h
++++ b/frontend/main.h
+@@ -84,13 +84,18 @@ enum sched_action {
+ 	SACTION_MINIMIZE,
+ 	SACTION_TOGGLE_FPS,
+ 	SACTION_TOGGLE_FULLSCREEN,
++	SACTION_QUIT,
+ 	SACTION_GUN_TRIGGER = 16,
+ 	SACTION_GUN_A,
+ 	SACTION_GUN_B,
+ 	SACTION_GUN_TRIGGER2,
+ 	SACTION_ANALOG_TOGGLE,
++	SACTION_HOTKEY_MOD,
+ };
+ 
+ #define SACTION_GUN_MASK (0x0f << SACTION_GUN_TRIGGER)
++/* actions that require SACTION_HOTKEY_MOD to be held simultaneously */
++#define SACTION_HOTKEY_MASK \
++	((1 << SACTION_QUIT) | (1 << SACTION_LOAD_STATE) | (1 << SACTION_SAVE_STATE))
+ 
+ #endif /* __FRONTEND_MAIN_H__ */
+diff --git a/frontend/menu.c b/frontend/menu.c
+index 05c8a085..5b551b28 100644
+--- a/frontend/menu.c
++++ b/frontend/menu.c
+@@ -918,6 +918,7 @@ me_bind_action emuctrl_actions[] =
+ 	{ "Toggle fullscreen", 1 << SACTION_TOGGLE_FULLSCREEN },
+ #endif
+ 	{ "Enter Menu       ", 1 << SACTION_ENTER_MENU },
++	{ "Quit             ", 1 << SACTION_QUIT },
+ 	{ "Gun Trigger      ", 1 << SACTION_GUN_TRIGGER },
+ 	{ "Gun A button     ", 1 << SACTION_GUN_A },
+ 	{ "Gun B button     ", 1 << SACTION_GUN_B },
+@@ -927,6 +928,7 @@ me_bind_action emuctrl_actions[] =
+ 	{ "Volume Down      ", 1 << SACTION_VOLUME_DOWN },
+ #endif
+ 	{ "Analog toggle    ", 1 << SACTION_ANALOG_TOGGLE },
++	{ "Hotkey Mod       ", 1 << SACTION_HOTKEY_MOD },
+ 	{ NULL,                0 }
+ };
+ 
+diff --git a/frontend/plugin_lib.c b/frontend/plugin_lib.c
+index f17b6b4c..b7d120ed 100644
+--- a/frontend/plugin_lib.c
++++ b/frontend/plugin_lib.c
+@@ -711,6 +711,9 @@ static void update_input(void)
+ 	in_state_gun = emu_act & SACTION_GUN_MASK;
+ 
+ 	emu_act &= ~SACTION_GUN_MASK;
++	if (!(emu_act & (1 << SACTION_HOTKEY_MOD)))
++		emu_act &= ~SACTION_HOTKEY_MASK;
++	emu_act &= ~(1 << SACTION_HOTKEY_MOD);
+ 	if (emu_act) {
+ 		int which = 0;
+ 		for (; !(emu_act & 1); emu_act >>= 1, which++)

@@ -4,25 +4,19 @@
 #include <linux/input.h>
 #include <sys/ioctl.h>
 
-#define MAX_INPUT_DEVICES 3
+#define MAX_INPUT_DEVICES 4
 #define WAKE_DEBOUNCE_MS 500
 
-static int input_fds[MAX_INPUT_DEVICES] = {-1, -1, -1};
+static int input_fds[MAX_INPUT_DEVICES] = {-1, -1, -1, -1};
 static int num_devices = 0;
 static struct timespec power_press_time = {0};
 static struct timespec last_wake_time = {0};
 static bool power_button_held = false;
 static bool mode_button_held = false;
+static bool headphones_inserted = false;
 
 // Brightness: 4-100% in 7 steps of 16, default to ~50%
 static int current_brightness = 52;
-
-// Volume: 0-65% in steps of 5, default to 50% to match init
-//         Specifically stops at 65% to prevent clipping in games
-#define VOLUME_MAX 65
-#define VOLUME_MIN 0
-#define VOLUME_STEP 5
-static int current_volume = 50;
 
 static int find_device_by_name(const char *device_name)
 {
@@ -64,7 +58,8 @@ bool input_monitor_init(void)
     const char *device_names[] = {
         "joypad",    // Mode
         "pwrkey",    // Power
-        "gpio-keys"  // Volume + Lid
+        "gpio-keys", // Volume + Lid
+        "rk817_ext", // Headphones
     };
 
     for (int i = 0; i < MAX_INPUT_DEVICES; i++)
@@ -157,16 +152,7 @@ bool input_monitor_check_hotkeys(void)
                 }
                 else
                 {
-                    if (current_volume < VOLUME_MAX)
-                    {
-                        current_volume += VOLUME_STEP;
-                        if (current_volume > VOLUME_MAX)
-                            current_volume = VOLUME_MAX;
-                        char cmd[128];
-                        snprintf(cmd, sizeof(cmd),
-                                 "amixer -q -c 0 sset 'Master' %d%%", current_volume);
-                        system(cmd);
-                    }
+                    system("amixer -q -c 0 sset 'Master' 5%+");
                 }
                 break;
 
@@ -188,16 +174,7 @@ bool input_monitor_check_hotkeys(void)
                 }
                 else
                 {
-                    if (current_volume > VOLUME_MIN)
-                    {
-                        current_volume -= VOLUME_STEP;
-                        if (current_volume < VOLUME_MIN)
-                            current_volume = VOLUME_MIN;
-                        char cmd[128];
-                        snprintf(cmd, sizeof(cmd),
-                                 "amixer -q -c 0 sset 'Master' %d%%", current_volume);
-                        system(cmd);
-                    }
+                    system("amixer -q -c 0 sset 'Master' 5%-");
                 }
                 break;
 
@@ -208,6 +185,19 @@ bool input_monitor_check_hotkeys(void)
                     clock_gettime(CLOCK_MONOTONIC, &last_wake_time);
                 }
                 break;
+
+            case SW_HEADPHONE_INSERT:
+                // Only switch modes once on change rather than per loop
+                if (ev.value == 0 && headphones_inserted)
+                {
+                    system("amixer -q -c 0 cset name='Playback Mux' SPK");
+                    headphones_inserted = false;
+                }
+                else if (ev.value == 1 && !headphones_inserted)
+                {
+                    system("amixer -q -c 0 cset name='Playback Mux' HP");
+                    headphones_inserted = true;
+                }
             }
         }
     }

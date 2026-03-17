@@ -16,7 +16,7 @@ echo "  Loading mali gpu driver..."
 modprobe mali_kbase || echo "Warning: Mali GPU driver failed to load"
 
 echo "Setting up audio..."
-amixer -c 0 sset 'Master' unmute 50%
+amixer -c 0 sset 'Master' unmute 65%
 amixer -c 0 cset name='Playback Mux' SPK
 
 if [ -b "/dev/mmcblk2p1" ]; then
@@ -28,9 +28,19 @@ if [ -b "/dev/mmcblk2p1" ]; then
 
     # Copy bios for user convenience in case they want to use the second card for all game files
     if [ -d "/mnt/games2/data" ]; then
-        echo "Copying BIOS files from second SD Card..."
         cp -r /mnt/games2/data/* /mnt/games/data/
     fi
+    # Also check for the RA version folder scheme. Convenience!
+    if [ -d "/mnt/games2/bios" ]; then
+        cp -r /mnt/games2/bios/* /mnt/games/data/
+        if [ -d "/mnt/games/bios/dc" ]; then
+            mv /mnt/games/bios/dc/* /mnt/games/data/
+            rmdir /mnt/games/bios/dc/
+        fi
+    fi
 fi
+
+cp /root/.ppsspp/ppsspp.ini /mnt/games/data/ppsspp/PSP/SYSTEM/
+cp /root/.ppsspp/controls.ini /mnt/games/data/ppsspp/PSP/SYSTEM/
 
 echo "==> MIMIKI init complete!"

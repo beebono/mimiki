@@ -16,12 +16,12 @@ BUILD_DIR="$REPO_ROOT/build"
 EMU_DIR="$EXTERNAL_DIR/emulators"
 EMU_INSTALL="$BUILD_DIR/emulators"
 SDL2_INSTALL="$BUILD_DIR/sdl2-install"
+SDL12_INSTALL="$BUILD_DIR/sdl12-install"
 
 # Cross-compilation
 export ARCH=arm64
 export CROSS_COMPILE=aarch64-linux-gnu-
 CMAKE_TC="$REPO_ROOT/system/config/toolchain-aarch64-linux-gnu.cmake"
-CMAKE_TC_CLANG="$REPO_ROOT/system/config/toolchain-aarch64-linux-gnu-clang.cmake"
 HOST=aarch64-linux-gnu
 JOBS=$(nproc)
 
@@ -79,7 +79,7 @@ check_dependencies() {
     print_step "All dependencies found!"
 }
 
-setup_sdl2_environment() {
+setup_sdl_environment() {
     print_step "Configuring SDL2 environment for cross-compilation..."
 
     # Point pkg-config to custom SDL2
@@ -88,6 +88,9 @@ setup_sdl2_environment() {
 
     # Also set SDL2_CONFIG as fallback
     export SDL2_CONFIG="$SDL2_INSTALL/usr/bin/sdl2-config"
+
+    # And set SDL_CONFIG so pcsx-rearmed can pick up sdl12-compat instead
+    export SDL_CONFIG="$SDL12_INSTALL/usr/bin/sdl-config"
 
     # Override pkg-config to use cross-compile prefix if available
     if command -v "${CROSS_COMPILE}"pkg-config &> /dev/null; then
@@ -142,7 +145,8 @@ apply_patches() {
 apply_all_patches() {
     apply_patches "mupen64plus" "$EMU_DIR/mupen64plus/video-gliden64" "mupen64plus"
     apply_patches "flycast" "$EMU_DIR/flycast" "flycast"
-    apply_patches "duckstation" "$EMU_DIR/duckstation" "duckstation"
+    apply_patches "ppsspp" "$EMU_DIR/ppsspp" "ppsspp"
+    apply_patches "pcsx-rearmed" "$EMU_DIR/pcsx-rearmed" "pcsx-rearmed"
 }
 
 build_flycast() {
@@ -175,63 +179,32 @@ build_flycast() {
     print_step "Flycast built and installed to $FLYCAST_INSTALL"
 }
 
-build_duckstation_deps() {
-    # DuckStation requires SDL3 and several other libraries not covered by
-    # mimiki's SDL2 build. Luckily it has its own script to cover this!
-    local DS_DIR="$EMU_DIR/duckstation"
-    local DS_HOST_DEPS="$BUILD_DIR/duckstation-host-deps"
-    local DS_DEPS="$BUILD_DIR/duckstation-deps"
+build_pcsx() {
+    print_step "Building PCSX-ReARMed..."
 
-    if [ -f "$DS_DEPS/lib/libsoundtouch.so" ] || [ -f "$DS_DEPS/lib/libsoundtouch.a" ]; then
-        print_step "DuckStation deps already built, skipping..."
-        return
-    fi
+    local PCSX_DIR="$EMU_DIR/pcsx-rearmed"
+    local PCSX_INSTALL="$EMU_INSTALL/pcsx"
 
-    print_step "Building DuckStation dependencies (SDL3, shaderc, etc.)..."
+    cd "$PCSX_DIR"
 
-    mkdir -p "$DS_HOST_DEPS" "$DS_DEPS"
+    CROSS_COMPILE="$CROSS_COMPILE" \
+    CFLAGS="-Ofast -march=armv8-a+simd -mtune=cortex-a55 -flto=auto" LDFLAGS="-flto=auto" \
+    ./configure --dynarec=ari64 --gpu=neon --sound-drivers=sdl \
+        --enable-neon --enable-threads --enable-dynamic 
 
-    local SYSROOT="/"
+    make -j"$JOBS"
 
-    "$DS_DIR/scripts/deps/build-dependencies-linux-cross.sh" \
-        "$DS_HOST_DEPS" arm64 "$SYSROOT" "$DS_DEPS"
-
-    print_step "DuckStation dependencies built at $DS_DEPS"
-}
-
-build_duckstation() {
-    print_step "Building DuckStation..."
-
-    local DS_DIR="$EMU_DIR/duckstation"
-    local DS_DEPS="$BUILD_DIR/duckstation-deps"
-    local DS_BUILD="$DS_DIR/build"
-    local DS_INSTALL="$EMU_INSTALL/duckstation"
-
-    mkdir -p "$DS_BUILD"
-    cd "$DS_BUILD"
-
-    build_duckstation_deps
-
-    # DuckStation officially only supports Clang, so use a specific cross toolchain.
-    cmake .. \
-        -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TC_CLANG" -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_PREFIX_PATH="$DS_DEPS" -DCMAKE_INSTALL_PREFIX="$DS_INSTALL" \
-        -DBUILD_QT_FRONTEND=OFF -DBUILD_MINI_FRONTEND=ON -DENABLE_VULKAN=ON \
-        -DENABLE_OPENGL=OFF -DENABLE_X11=OFF -DENABLE_WAYLAND=OFF
-
-    cmake --build . --target duckstation-mini -j"$JOBS"
-
-    if [ ! -f "$DS_BUILD/bin/duckstation-mini" ]; then
-        print_error "DuckStation build failed!"
+    if [ ! -f "$PCSX_DIR/pcsx" ]; then
+        print_error "PCSX-ReARMed build failed!"
         exit 1
     fi
 
-    "${CROSS_COMPILE}"strip --strip-unneeded "$DS_BUILD/bin/duckstation-mini"
-    mkdir -p "$DS_INSTALL"
-    cmake --install . --component duckstation-mini
-    cp -r "$DS_BUILD/bin"/* "$DS_INSTALL/"
+    "${CROSS_COMPILE}"strip --strip-unneeded "$PCSX_DIR/pcsx"
 
-    print_step "DuckStation built and installed to $DS_INSTALL"
+    mkdir -p "$PCSX_INSTALL/bin"
+    cp "$PCSX_DIR/pcsx" "$PCSX_INSTALL/bin/"
+
+    print_step "PCSX-ReARMed built and installed to $PCSX_INSTALL"
 }
 
 build_ppsspp() {
@@ -273,13 +246,13 @@ main() {
     echo ""
 
     check_dependencies
-    setup_sdl2_environment
+    setup_sdl_environment
     apply_all_patches
 
     # Multiple compilations required for mupen64plus, use separate script
     "$SCRIPTS_DIR/build-mupen64plus.sh"
     build_flycast
-    build_duckstation
+    build_pcsx
     build_ppsspp
 
     echo ""
