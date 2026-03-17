@@ -1,79 +1,26 @@
 # MIMIKI - Minimal Miyoo Kiosk
 
 A minimal emulation platform for the Miyoo Flip (RK3566).
-MIMIKI provides a lightweight Linux OS image with a custom SDL2 launcher and pre-configured
-emulators for N64, Dreamcast, PS1, and PSP.
+MIMIKI provides a lightweight Linux OS image with a custom SDL2 launcher
+and pre-configured emulators for N64, Dreamcast, PS1, and PSP.
 
 ---
 
-## Requirements
+## UI Previews
 
-- Linux host with standard build tools
-- ARM64 cross-compilation tools and libraries
-- Root access for image creation and flashing
-- GammaLoader installed in stock firmware
+<img src="main_menu.png" width="49%" /> <img src="game_menu.png" width="49%" />
 
 ---
 
-## Cloning
+## Installation
 
-The project uses Git submodules for the kernel, bootloader, libraries, and emulators.
-Clone with all submodules in one step:
+**GammaLoader must be installed to the stock firmware for SD Card booting to work!** 
 
-```sh
-git clone --recurse-submodules https://github.com/noxwell/mimiki.git
-cd mimiki
-```
+Simply download the latest `mimiki-sdcard.img` from Releases and use your 
+preferred image flashing software to write the image to the target SD Card.
 
-If you have already cloned without `--recurse-submodules`, initialize the submodules manually:
-
-```sh
-git submodule update --init --recursive
-```
-NOTE: The mupen64plus directory may throw an error here.
-If so, you will need to initialize each other submodule manually rather than recursively.
-
----
-
-## Build System
-
-Run `make help` to display all available build targets:
-
-```sh
-make help
-```
-
-The standard build sequence is:
-
-```sh
-make tools        # Build libraries and utilities (SDL2, busybox, etc.)
-make boot         # Build U-Boot and Linux kernel
-make launcher     # Build the MIMIKI SDL2 launcher
-make emulators    # Build the standalone emulators
-make rootfs       # Assemble the root filesystem
-make image        # Create a bootable SD card image (requires root)
-```
-
-Or build everything in one command:
-
-```sh
-make build-all
-```
-
----
-
-## Flashing
-
-Once the image is built, flash it to an SD card:
-
-```sh
-make flash SDCARD=/dev/sdX
-```
-
-Replace `/dev/sdX` with the actual block device path of your SD card.
-This operation requires root and will **overwrite all data** on the target device.
-
-Or use your preferred image flashing program with a pre-built image from Releases.
+You can also build the image directly on your machine by following the steps laid
+out under the `Build Requirements` section below and the sections beneath it.
 
 ---
 
@@ -116,18 +63,7 @@ The launcher scans these directories automatically on boot.
 | `/ps1`    | PlayStation | `.chd`, `.pbp`, `.bin`/`.cue`   | BIOS files required under `/data` |
 | `/psp`    | PSP         | `.chd`, `.cso`, `.iso`          |                                   |
 
-These same directories can be created on a second SD card if you prefer separate storage.
-
----
-
-## Supported Emulators
-
-| System      | Emulator    |
-|-------------|-------------|
-| N64         | mupen64plus |
-| Dreamcast   | Flycast     |
-| PlayStation | PCSXReARMed |
-| PSP         | PPSSPP      |
+These same directories can be created on a second SD card if you prefer separated storage.
 
 ---
 
@@ -143,3 +79,79 @@ These same directories can be created on a second SD card if you prefer separate
 | Lid       | Sleep/Wake                    |
 | Tap Pwr   | Sleep/Wake                    |
 | Hold Pwr  | Exit+Pwroff (!DOES NOT SAVE!) |
+
+---
+
+## Supported Emulators
+
+| System      | Emulator    |
+|-------------|-------------|
+| N64         | mupen64plus |
+| Dreamcast   | Flycast     |
+| PlayStation | PCSXReARMed |
+| PSP         | PPSSPP      |
+
+---
+
+## Build Requirements
+
+- Linux host with standard build tools
+- ARM64 cross-compilation tools and libraries
+- Root access for image creation and flashing
+- GammaLoader installed in stock firmware
+
+---
+
+## Cloning
+
+The project uses Git submodules for the kernel, bootloader, libraries, and emulators.
+Clone with all submodules in one step:
+
+```sh
+git clone --recurse-submodules https://github.com/noxwell/mimiki.git
+cd mimiki
+```
+
+If you have already cloned without `--recurse-submodules`, initialize the submodules manually:
+
+```sh
+git submodule update --init --recursive
+```
+NOTE: The mupen64plus directory may throw an error here.
+If so, you will need to initialize each other submodule manually rather than recursively.
+
+---
+
+## Build/Flashing Steps
+
+Run `make help` to display all available build targets:
+
+```sh
+make help
+```
+
+The standard build sequence is:
+
+```sh
+make tools        # Build libraries and utilities (SDL2, busybox, etc.)
+make boot         # Build U-Boot and Linux kernel
+make launcher     # Build the MIMIKI SDL2 launcher
+make emulators    # Build the standalone emulators
+make rootfs       # Assemble the root filesystem
+make image        # Create a bootable SD card image (requires root)
+```
+
+Or build everything in one command:
+
+```sh
+make build-all
+```
+
+Once the image is built, you can flash it to an SD card:
+
+```sh
+make flash SDCARD=/dev/sdX
+```
+
+Replace `/dev/sdX` with the actual block device path of your SD card.
+This operation requires root and will **overwrite all data** on the target device.
