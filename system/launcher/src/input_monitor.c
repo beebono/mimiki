@@ -13,6 +13,7 @@ static struct timespec power_press_time = {0};
 static struct timespec last_wake_time = {0};
 static bool power_button_held = false;
 static bool mode_button_held = false;
+static bool start_button_held = false;
 static bool headphones_inserted = false;
 
 // Brightness: 4-100% in 7 steps of 16, default to ~50%
@@ -85,7 +86,7 @@ bool input_monitor_init(void)
     return true;
 }
 
-bool input_monitor_check_hotkeys(void)
+int input_monitor_check_hotkeys(void)
 {
     struct input_event ev;
 
@@ -121,7 +122,7 @@ bool input_monitor_check_hotkeys(void)
                     power_button_held = false;
 
                     if (held_ms >= 1750)
-                        return true;
+                        return HOTKEY_SHUTDOWN;
 
                     long last_wake_ms = (now.tv_sec - last_wake_time.tv_sec) * 1000 +
                                         (now.tv_nsec - last_wake_time.tv_nsec) / 1000000;
@@ -178,6 +179,12 @@ bool input_monitor_check_hotkeys(void)
                 }
                 break;
 
+            case BTN_START:
+                start_button_held = (ev.value == 1 || ev.value == 2);
+                if (ev.value == 1 && mode_button_held)
+                    return HOTKEY_EXIT_EMU;
+                break;
+
             case SW_LID:
                 if (ev.value == 1)
                 {
@@ -209,10 +216,10 @@ bool input_monitor_check_hotkeys(void)
         long held_ms = (now.tv_sec - power_press_time.tv_sec) * 1000 +
                        (now.tv_nsec - power_press_time.tv_nsec) / 1000000;
         if (held_ms >= 1750)
-            return true;
+            return HOTKEY_SHUTDOWN;
     }
 
-    return false;
+    return HOTKEY_NONE;
 }
 
 void input_monitor_cleanup(void)
@@ -228,4 +235,5 @@ void input_monitor_cleanup(void)
     num_devices = 0;
     mode_button_held = false;
     power_button_held = false;
+    start_button_held = false;
 }

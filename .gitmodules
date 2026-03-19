@@ -64,3 +64,6 @@
 [submodule "external/tools/sdl12-compat"]
 	path = external/tools/sdl12-compat
 	url = https://github.com/libsdl-org/sdl12-compat.git
+[submodule "external/emulators/yabasanshiro"]
+	path = external/emulators/yabasanshiro
+	url = https://github.com/devmiyax/yabause.git

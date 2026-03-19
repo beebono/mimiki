@@ -2,11 +2,11 @@
 
 A minimal emulation platform for the Miyoo Flip (RK3566).
 MIMIKI provides a lightweight Linux OS image with a custom SDL2 launcher
-and pre-configured emulators for N64, Dreamcast, PS1, and PSP.
+and pre-configured emulators for N64, Saturn, Dreamcast, PS1, and PSP.
 
 ---
 
-## UI Previews
+## UI Previews (OUTDATED)
 
 <img src="main_menu.png" width="49%" /> <img src="game_menu.png" width="49%" />
 
@@ -14,9 +14,19 @@ and pre-configured emulators for N64, Dreamcast, PS1, and PSP.
 
 ## Installation
 
-**GammaLoader must be installed to the stock firmware for SD Card booting to work!** 
+**GammaLoader must be installed to the stock firmware for SD Card booting to work!**
+**If you have GammaLoader installed already, skip immediately to step 2!**
 
-Simply download the latest `mimiki-sdcard.img` from Releases and use your 
+1. Download the `GammaLoaderMiyooFlip.zip` file from Releases
+    1. Prepare an empty FAT32 formatted SD Card
+    2. Copy/Unzip the `App` folder from inside the `GammaLoaderMiyooFlip.zip` file
+    so that it sits directly at the root of the previously prepared SD Card.
+    3. Insert the loaded SD card into your Miyoo Flip and power it on.
+    4. Navigate to the App section of the stock firmware and launch the
+    `Gamma Bootloader Installer` application.
+    5. Wait until your device reboots back into the stock firmware. 
+
+2. Download the latest `mimiki-sdcard.img` from Releases and use your 
 preferred image flashing software to write the image to the target SD Card.
 
 You can also build the image directly on your machine by following the steps laid
@@ -59,6 +69,7 @@ The launcher scans these directories automatically on boot.
 | Directory | System      | Supported Formats               | Notes                             |
 |-----------|-------------|---------------------------------|-----------------------------------|
 | `/n64`    | Nintendo 64 | `.z64`, `.n64`, `.v64`          |                                   |
+| `/stn`    | Saturn      | `.chd`, `.iso`, `.bin`/`.cue`   | BIOS files required under `/data` |
 | `/dc`     | Dreamcast   | `.chd`, `.gdi`, `.cdi`          | BIOS files required under `/data` |
 | `/ps1`    | PlayStation | `.chd`, `.pbp`, `.bin`/`.cue`   | BIOS files required under `/data` |
 | `/psp`    | PSP         | `.chd`, `.cso`, `.iso`          |                                   |
@@ -84,12 +95,13 @@ These same directories can be created on a second SD card if you prefer separate
 
 ## Supported Emulators
 
-| System      | Emulator    |
-|-------------|-------------|
-| N64         | mupen64plus |
-| Dreamcast   | Flycast     |
-| PlayStation | PCSXReARMed |
-| PSP         | PPSSPP      |
+| System      | Emulator     |
+|-------------|--------------|
+| N64         | mupen64plus  |
+| Saturn      | yabasanshiro |
+| Dreamcast   | Flycast      |
+| PlayStation | PCSX-ReARMed |
+| PSP         | PPSSPP       |
 
 ---
 
@@ -98,7 +110,6 @@ These same directories can be created on a second SD card if you prefer separate
 - Linux host with standard build tools
 - ARM64 cross-compilation tools and libraries
 - Root access for image creation and flashing
-- GammaLoader installed in stock firmware
 
 ---
 
@@ -108,7 +119,7 @@ The project uses Git submodules for the kernel, bootloader, libraries, and emula
 Clone with all submodules in one step:
 
 ```sh
-git clone --recurse-submodules https://github.com/noxwell/mimiki.git
+git clone --recurse-submodules https://github.com/beebono/mimiki.git
 cd mimiki
 ```
 

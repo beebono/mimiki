@@ -1,0 +1,35 @@
+diff --git a/yabause/CMake/Packages/external_libchdr.cmake b/yabause/CMake/Packages/external_libchdr.cmake
+index ee825567..c4f3ec91 100644
+--- a/yabause/CMake/Packages/external_libchdr.cmake
++++ b/yabause/CMake/Packages/external_libchdr.cmake
+@@ -24,6 +24,13 @@ elseif(IOS)
+     -DPLATFORM=${PLATFORM}
+   )
+ 
++elseif(CMAKE_CROSSCOMPILING AND CMAKE_TOOLCHAIN_FILE)
++  get_filename_component(TOOL_CHAIN_ABSOLUTE_PATH "${CMAKE_TOOLCHAIN_FILE}"
++                         REALPATH BASE_DIR "${CMAKE_BINARY_DIR}")
++  set(ADDITIONAL_CMAKE_ARGS
++    -DCMAKE_TOOLCHAIN_FILE=${TOOL_CHAIN_ABSOLUTE_PATH}
++    -DWITH_LZMA_ASM=OFF
++  )
+ else()
+   set(ADDITIONAL_CMAKE_ARGS "")
+ endif()
+@@ -60,8 +67,15 @@ set(LIBCHDR_LIBRARIES
+  ${CMAKE_STATIC_LIBRARY_PREFIX}zstd${CMAKE_STATIC_LIBRARY_SUFFIX}
+  )
+  set( LIBCHDR_LIB_DIR ${BINARY_DIR} ${BINARY_DIR}/deps/zstd-1.5.6/build/cmake/lib/ ${BINARY_DIR}/deps/lzma-24.05/ )
++elseif(CMAKE_CROSSCOMPILING)
++set(LIBCHDR_LIBRARIES
++ ${BINARY_DIR}/${CMAKE_STATIC_LIBRARY_PREFIX}chdr-static${CMAKE_STATIC_LIBRARY_SUFFIX}
++ ${BINARY_DIR}/deps/lzma-24.05/${CMAKE_STATIC_LIBRARY_PREFIX}lzma${CMAKE_STATIC_LIBRARY_SUFFIX}
++ ${BINARY_DIR}/deps/zstd-1.5.6/build/cmake/lib/${CMAKE_STATIC_LIBRARY_PREFIX}zstd${CMAKE_STATIC_LIBRARY_SUFFIX}
++ )
++ set( LIBCHDR_LIB_DIR ${BINARY_DIR} )
+ else()
+-set(LIBCHDR_LIBRARIES  
++set(LIBCHDR_LIBRARIES
+  ${BINARY_DIR}/${CMAKE_STATIC_LIBRARY_PREFIX}chdr-static${CMAKE_STATIC_LIBRARY_SUFFIX}
+  ${BINARY_DIR}/${CMAKE_STATIC_LIBRARY_PREFIX}flac-static${CMAKE_STATIC_LIBRARY_SUFFIX}
+  ${BINARY_DIR}/${CMAKE_STATIC_LIBRARY_PREFIX}crypto-static${CMAKE_STATIC_LIBRARY_SUFFIX}

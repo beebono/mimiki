@@ -51,12 +51,6 @@ check_dependencies() {
         missing_deps+=("${CROSS_COMPILE}g++ (aarch64 cross-compiler)")
     fi
 
-    for tool in clang clang++ lld; do
-        if ! command -v $tool &> /dev/null; then
-            missing_deps+=("$tool (required for DuckStation)")
-        fi
-    done
-
     # Build tools
     for tool in make pkg-config ninja; do
         if ! command -v $tool &> /dev/null; then
@@ -67,7 +61,7 @@ check_dependencies() {
     # Check for SDL2 build
     if [ ! -d "$SDL2_INSTALL/usr/lib" ]; then
         print_error "SDL2 not found at $SDL2_INSTALL"
-        print_error "Run build-launcher.sh first to build SDL2"
+        print_error "Run build-tools.sh first to build SDL2"
         exit 1
     fi
 
@@ -144,9 +138,45 @@ apply_patches() {
 
 apply_all_patches() {
     apply_patches "mupen64plus" "$EMU_DIR/mupen64plus/video-gliden64" "mupen64plus"
+    apply_patches "yabasanshiro" "$EMU_DIR/yabasanshiro" "yabasanshiro"
     apply_patches "flycast" "$EMU_DIR/flycast" "flycast"
     apply_patches "ppsspp" "$EMU_DIR/ppsspp" "ppsspp"
     apply_patches "pcsx-rearmed" "$EMU_DIR/pcsx-rearmed" "pcsx-rearmed"
+}
+
+build_yabasanshiro() {
+    print_step "Building YabaSanshiro..."
+
+    local YABA_DIR="$EMU_DIR/yabasanshiro"
+    local YABA_BUILD="$YABA_DIR/build"
+    local YABA_INSTALL="$EMU_INSTALL/yabasanshiro"
+
+    # Copy custom KMS/DRM port into source tree
+    cp -r "$REPO_ROOT/system/ports/yabasanshiro/kmsdrm/" \
+        "$YABA_DIR/yabause/src/"
+
+    mkdir -p "$YABA_BUILD"
+    cd "$YABA_BUILD"
+
+    cmake ../yabause \
+        -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TC" -DCMAKE_BUILD_TYPE=Release \
+        -DYAB_PORTS=kmsdrm -DYAB_WANT_VULKAN=ON -DYAB_WANT_SDL=ON \
+        -DYAB_WANT_OPENAL=OFF -DYAB_WANT_OPENGL=ON -DUSE_EGL=ON \
+        -DYAB_WANT_DYNAREC_DEVMIYAX=ON -DYAB_WANT_C68K=ON -DUSE_VK_KHR_DISPLAY=ON
+
+    cmake --build . -j"$JOBS"
+
+    if [ ! -f "$YABA_BUILD/src/kmsdrm/yabasanshiro" ]; then
+        print_error "YabaSanshiro build failed!"
+        exit 1
+    fi
+
+    "${CROSS_COMPILE}"strip --strip-unneeded "$YABA_BUILD/src/kmsdrm/yabasanshiro"
+
+    mkdir -p "$YABA_INSTALL/bin"
+    cp "$YABA_BUILD/src/kmsdrm/yabasanshiro" "$YABA_INSTALL/bin/"
+
+    print_step "YabaSanshiro built and installed to $YABA_INSTALL"
 }
 
 build_flycast() {
@@ -251,6 +281,7 @@ main() {
 
     # Multiple compilations required for mupen64plus, use separate script
     "$SCRIPTS_DIR/build-mupen64plus.sh"
+    build_yabasanshiro
     build_flycast
     build_pcsx
     build_ppsspp
@@ -261,8 +292,9 @@ main() {
     echo "Installation directory: $EMU_INSTALL"
     echo "  N64:      $EMU_INSTALL/mupen64plus"
     echo "  DC:       $EMU_INSTALL/flycast"
-    echo "  PS1:      $EMU_INSTALL/duckstation"
+    echo "  PS1:      $EMU_INSTALL/pcsx"
     echo "  PSP:      $EMU_INSTALL/ppsspp"
+    echo "  Saturn:   $EMU_INSTALL/yabasanshiro"
 }
 
 main "$@"

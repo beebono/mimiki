@@ -13,7 +13,7 @@
 #define SCREEN_HEIGHT 480
 
 // Menu
-#define MAX_SYSTEMS 4
+#define MAX_SYSTEMS 5
 #define MAX_GAMES 256
 #define BATTERY_READ_MS 1750
 
@@ -47,12 +47,14 @@ static bool battery_charging = false;
 static Uint32 battery_last_read  = 0;
 
 static const char *n64_exts[] = {".z64", ".n64", ".v64", NULL};
+static const char *stn_exts[] = {".chd", ".iso", ".cue", NULL};
 static const char *dc_exts[] = {".gdi", ".cdi", ".chd", NULL};
 static const char *ps1_exts[] = {".cue", ".chd", ".pbp", NULL};
 static const char *psp_exts[] = {".iso", ".cso", ".chd", NULL};
 
 static System systems[MAX_SYSTEMS] = {
     {"Nintendo 64", "n64", "mupen64plus", n64_exts, {}, 0},
+    {"Saturn", "stn", "yabasanshiro", stn_exts, {}, 0},
     {"Dreamcast", "dc", "flycast", dc_exts, {}, 0},
     {"PlayStation", "ps1", "pcsx", ps1_exts, {}, 0},
     {"PS Portable", "psp", "PPSSPPSDL", psp_exts, {}, 0}};
@@ -224,10 +226,9 @@ static bool load_font(void)
 static bool init_sdl(void)
 {
     setenv("SDL_VIDEODRIVER", "kmsdrm", 1);
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) < 0)
+    while (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) < 0)
     {
-        fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
-        return false;
+        usleep(250000);
     }
 
     window = SDL_CreateWindow("MIMIKI",
@@ -598,11 +599,16 @@ static void launch_game(System *sys, Game *game)
     printf("Launching: %s (%s)\n", game->name, game->path);
     cleanup_sdl();
 
+    const char *cpu_gov = "schedutil";
     const char *gpu_gov = "simple_ondemand";
+
     if (strcmp(sys->short_name, "n64") == 0)
         gpu_gov = "performance";
+    
+    if (strcmp(sys->short_name, "stn") == 0)
+        cpu_gov = "performance";
 
-    set_cpu_governor("schedutil");
+    set_cpu_governor(cpu_gov);
     set_gpu_governor(gpu_gov);
 
     pid_t pid = fork();
@@ -613,6 +619,11 @@ static void launch_game(System *sys, Game *game)
         {
             setenv("XDG_CACHE_HOME", "/mnt/games/data/.cache", 1);
             execl("/usr/bin/mupen64plus", sys->emulator, game->path, (char *)NULL);
+        }
+        else if (strcmp(sys->short_name, "stn") == 0)
+        {
+            execl("/usr/bin/yabasanshiro", sys->emulator,
+                "-b", "/mnt/games/data/saturn_bios.bin", "-i", game->path, (char *)NULL);
         }
         else if (strcmp(sys->short_name, "dc") == 0)
         {
@@ -636,10 +647,11 @@ static void launch_game(System *sys, Game *game)
         int status;
         while (waitpid(pid, &status, WNOHANG) == 0)
         {
-            if (input_monitor_check_hotkeys()) {
-                kill(pid, SIGTERM); // rcK handles reaping
-                // Don't bother changing governor here since it's going down soon anyway
-                return;
+            int hotkey = input_monitor_check_hotkeys();
+            if (hotkey == HOTKEY_EXIT_EMU || hotkey == HOTKEY_SHUTDOWN) {
+                kill(pid, SIGTERM);
+                usleep(250000); // Minor pause to let KMSDRM release itself
+                break;
             }
             usleep(50000);
         }
@@ -652,10 +664,10 @@ static void launch_game(System *sys, Game *game)
         fprintf(stderr, "Fork failed\n");
     }
 
+    init_sdl();
+
     set_cpu_governor("powersave");
     set_gpu_governor("powersave");
-
-    init_sdl();
 }
 
 static void handle_input(SDL_Event *event)
@@ -755,7 +767,7 @@ int main()
         else
             render_system_menu();
 
-        if (input_monitor_check_hotkeys()) {
+        if (input_monitor_check_hotkeys() == HOTKEY_SHUTDOWN) {
             if (renderer) {
                 SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
                 SDL_RenderClear(renderer);

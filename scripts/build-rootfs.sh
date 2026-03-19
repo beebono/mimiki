@@ -161,6 +161,9 @@ install_libraries() {
     # mupen64plus
     cp -L "$SYSROOT/libpng16.so.16" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libpng16 not found"
     cp -L "$SYSROOT/libz.so.1" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libz not found"
+    # yabasanshiro
+    cp -L "$SYSROOT/libglut.so.3.12" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libglut not found"
+    cp -L "$SYSROOT/libshaderc.so.1" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libshaderc not found"
     # flycast
     cp -L "$SYSROOT/libgomp.so.1" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libgomp not found"
     cp -L "$SYSROOT/libudev.so.1" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libudev not found"
@@ -193,7 +196,6 @@ install_emulators() {
     print_step "Installing emulators..."
 
     if [ -d "$BUILD_DIR/emulators/mupen64plus" ]; then
-        mkdir -p "$ROOTFS_BUILD/root/.config/mupen64plus/"{data,plugins}
         cp -a "$BUILD_DIR/emulators/mupen64plus/lib/libmupen64plus.so.2" \
             "$ROOTFS_BUILD/usr/lib/"
         cp -a "$BUILD_DIR/emulators/mupen64plus/lib/plugins"/* \
@@ -206,8 +208,14 @@ install_emulators() {
         print_step "mupen64plus installed!"
     fi
 
+    if [ -d "$BUILD_DIR/emulators/yabasanshiro" ]; then
+        cp -a "$BUILD_DIR/emulators/yabasanshiro/bin/yabasanshiro" \
+            "$ROOTFS_BUILD/usr/bin/"
+
+        print_step "yabasanshiro installed!"
+    fi
+
     if [ -d "$BUILD_DIR/emulators/flycast" ]; then
-        mkdir -p "$ROOTFS_BUILD/root/.config/flycast"
         cp -a "$BUILD_DIR/emulators/flycast/bin/flycast" \
             "$ROOTFS_BUILD/usr/bin/"
 
