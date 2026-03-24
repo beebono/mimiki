@@ -3,4 +3,5 @@
 !/external/rocknix/generic-dsi/Makefile
 !/external/rocknix/generic-dsi/panel-generic-dsi.c
 /system/*/build
+/system/charge-monitor/charge-monitor
 *.o
