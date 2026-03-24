@@ -820,7 +820,6 @@
 	disable-wp;
 	pinctrl-0 = <&sdmmc0_bus4 &sdmmc0_clk &sdmmc0_cmd &sdmmc0_det>;
 	pinctrl-names = "default";
-	sd-uhs-sdr104;
 	vmmc-supply = <&vcc_sd>;
 	vqmmc-supply = <&vccio_sd>;
 	status = "okay";
@@ -835,7 +834,6 @@
 	disable-wp;
 	pinctrl-0 = <&sdmmc1_bus4 &sdmmc1_clk &sdmmc1_cmd &sdmmc1_det>;
 	pinctrl-names = "default";
-	sd-uhs-sdr104;
 	vmmc-supply = <&vcc_sd2>;
 	vqmmc-supply = <&vccio_sd>;
 	status = "okay";

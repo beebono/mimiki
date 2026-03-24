@@ -215,11 +215,6 @@ static void init_curses(void)
     }
 }
 
-static void cleanup_curses(void)
-{
-    endwin();
-}
-
 static bool read_battery(void)
 {
     long now = monotonic_ms();
@@ -405,7 +400,8 @@ static void render_game_menu(void)
 
 static void launch_game(System *sys, Game *game)
 {
-    cleanup_curses();
+    erase();
+    refresh();
 
     const char *cpu_gov = "schedutil";
     const char *gpu_gov = "simple_ondemand";
@@ -473,8 +469,6 @@ static void launch_game(System *sys, Game *game)
             usleep(50000);
         }
     }
-
-    init_curses();
 
     set_cpu_governor("powersave");
     set_gpu_governor("powersave");
@@ -600,7 +594,7 @@ int main(void)
             erase();
             mvprintw(FOOTER_ROW, MARGIN + USABLE_COLS - 8, "mata ne!");
             refresh();
-            usleep(500000);
+            usleep(750000);
             system("poweroff");
             break;
         }
@@ -621,6 +615,6 @@ int main(void)
     }
 
     input_monitor_cleanup();
-    cleanup_curses();
+    endwin();
     return 0;
 }

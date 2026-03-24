@@ -2,19 +2,13 @@
 # MIMIKI - System initialization script
 
 echo 0 > /sys/class/graphics/fbcon/cursor_blink
+echo -en "\033]P1E60000\033]P200E600\033]P7E6E6E6" > /dev/tty0
 
 amixer -q -c 0 sset 'Master' unmute 70%
 amixer -q -c 0 cset name='Playback Mux' SPK
 
-sleep 0.2
-partprobe /dev/mmcblk2
 if [ -b "/dev/mmcblk2p1" ]; then
     mount /dev/mmcblk2p1 /mnt/games2
-    if [ $? -ne 0 ]; then
-        echo "Failed to mount second SD Card! Make sure it's formatted as fat32 or exfat!"
-        sleep 3
-    fi
-
     if [ -d "/mnt/games2/" ] && [ ! -e "/mnt/games/data/.migrated" ]; then
         # Copy bios for user convenience in case they want to use the second card for all game files.
         if [ -d "/mnt/games2/data" ]; then
