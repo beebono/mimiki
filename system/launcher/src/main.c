@@ -600,7 +600,7 @@ int main(void)
             erase();
             mvprintw(FOOTER_ROW, MARGIN + USABLE_COLS - 8, "mata ne!");
             refresh();
-            usleep(1000000);
+            usleep(500000);
             system("poweroff");
             break;
         }

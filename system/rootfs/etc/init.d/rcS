@@ -6,6 +6,8 @@ echo 0 > /sys/class/graphics/fbcon/cursor_blink
 amixer -q -c 0 sset 'Master' unmute 70%
 amixer -q -c 0 cset name='Playback Mux' SPK
 
+sleep 0.2
+partprobe /dev/mmcblk2
 if [ -b "/dev/mmcblk2p1" ]; then
     mount /dev/mmcblk2p1 /mnt/games2
     if [ $? -ne 0 ]; then
