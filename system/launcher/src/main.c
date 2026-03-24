@@ -2,19 +2,25 @@
 
 #include <sys/wait.h>
 #include <errno.h>
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_image.h>
+#include <signal.h>
+#include <curses.h>
 
-#include "font_data.h"
 #include "shared.h"
 
-// Display
-#define SCREEN_WIDTH 640
-#define SCREEN_HEIGHT 480
+// Layout using TER16x32
+#define MARGIN       1
+#define USABLE_COLS  38
+#define USABLE_ROWS  13
+#define HEADER_ROW   MARGIN
+#define FOOTER_ROW   (MARGIN + USABLE_ROWS)
+#define CONTENT_ROW  (HEADER_ROW + 2)
+#define BATTERY_COL  (MARGIN + USABLE_COLS - 7)
 
 // Menu
 #define MAX_SYSTEMS 5
 #define MAX_GAMES 256
+#define GAMES_PER_PAGE 10
+#define GAME_NAME_MAX_CHARS 32
 #define BATTERY_READ_MS 1750
 
 typedef struct
@@ -33,18 +39,16 @@ typedef struct
     int game_count;
 } System;
 
-static SDL_Window *window = NULL;
-static SDL_Renderer *renderer = NULL;
-static SDL_GameController *gamepad = NULL;
-static SDL_Texture *font_texture = NULL;
 static int current_system = 0;
 static int current_game = 0;
 static bool in_game_list = false;
-bool backlight_on = false;
 
 static int battery_capacity = -1;
 static bool battery_charging = false;
-static Uint32 battery_last_read  = 0;
+static long battery_last_read_ms = 0;
+
+static int scroll_offset = 0;
+static int last_scrolled_game = -1;
 
 static const char *n64_exts[] = {".z64", ".n64", ".v64", NULL};
 static const char *stn_exts[] = {".chd", ".iso", ".cue", NULL};
@@ -58,6 +62,20 @@ static System systems[MAX_SYSTEMS] = {
     {"Dreamcast", "dc", "flycast", dc_exts, {}, 0},
     {"PlayStation", "ps1", "pcsx", ps1_exts, {}, 0},
     {"PS Portable", "psp", "PPSSPPSDL", psp_exts, {}, 0}};
+
+enum {
+    PAIR_DEFAULT = 1,
+    PAIR_SELECTED,
+    PAIR_BATTERY_LOW,
+    PAIR_BATTERY_CHARGING,
+};
+
+static long monotonic_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
 
 static bool has_extension(const char *filename, const char **extensions)
 {
@@ -79,7 +97,6 @@ static bool has_extension(const char *filename, const char **extensions)
 static void set_cpu_governor(const char *cpu_gov)
 {
     if (cpu_gov) {
-        bool result = false;
         for (int cpu = 0; cpu < 4; cpu++) {
             char path[256];
             snprintf(path, sizeof(path),
@@ -89,14 +106,10 @@ static void set_cpu_governor(const char *cpu_gov)
             if (fp) {
                 fprintf(fp, "%s\n", cpu_gov);
                 fclose(fp);
-                result = true;
             } else if (cpu == 0) {
-                fprintf(stderr, "Could not set CPU governor: %s\n", strerror(errno));
                 break;
             }
         }
-        if (result)
-            printf("Set CPU governor to: %s\n", cpu_gov);
     }
 }
 
@@ -110,10 +123,8 @@ static void set_gpu_governor(const char *gpu_gov)
         {
             fprintf(fp, "%s\n", gpu_gov);
             fclose(fp);
-            printf("Set GPU governor to: %s\n", gpu_gov);
             return;
         }
-        fprintf(stderr, "Could not set GPU governor.\n");
     }
 }
 
@@ -124,44 +135,41 @@ static int compare_games(const void *a, const void *b)
     return strcasecmp(game_a->name, game_b->name);
 }
 
-static void scan_games(System *system)
+static void scan_games(System *sys)
 {
     DIR *dir;
     struct dirent *entry;
-    system->game_count = 0;
+    sys->game_count = 0;
 
     const char *base_dirs[] = {"/mnt/games", "/mnt/games2"};
 
-    // Scan each base directory
     for (int d = 0; d < 2; d++)
     {
         char rom_dir[32];
-        snprintf(rom_dir, sizeof(rom_dir), "%s/%s", base_dirs[d], system->short_name);
+        snprintf(rom_dir, sizeof(rom_dir), "%s/%s", base_dirs[d], sys->short_name);
 
         dir = opendir(rom_dir);
         if (!dir)
             continue;
 
-        while ((entry = readdir(dir)) != NULL && system->game_count < MAX_GAMES)
+        while ((entry = readdir(dir)) != NULL && sys->game_count < MAX_GAMES)
         {
             if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
                 continue;
 
-            // Only skip directories, regular files may be DT_UNKNOWN
             if (entry->d_type == DT_DIR)
                 continue;
 
-            if (has_extension(entry->d_name, system->extensions))
+            if (has_extension(entry->d_name, sys->extensions))
             {
-                Game *game = &system->games[system->game_count];
+                Game *game = &sys->games[sys->game_count];
 
-                // Copy filename without extension as game name
                 strncpy(game->name, entry->d_name, sizeof(game->name) - 2);
                 char *dot = strrchr(game->name, '.');
                 if (dot)
                     *dot = '\0';
 
-                // Remove parenthesized, bracketed, and braced annotations (e.g. "(USA)", "[!]", "{v1.0}")
+                // Remove parenthesized, bracketed, and braced annotations
                 static const char open_brackets[]  = "([{";
                 static const char close_brackets[] = ")]}";
                 for (int b = 0; b < 3; b++) {
@@ -172,251 +180,64 @@ static void scan_games(System *system)
                         memmove(open, close + 1, strlen(close + 1) + 1);
                     }
                 }
-                // Trim trailing whitespace left behind
                 char *end = game->name + strlen(game->name) - 1;
                 while (end > game->name && *end == ' ')
                     *end-- = '\0';
 
-                // Full path
                 snprintf(game->path, sizeof(game->path), "%s/%s",
                          rom_dir, entry->d_name);
 
-                system->game_count++;
+                sys->game_count++;
             }
         }
         closedir(dir);
     }
 
-    // Sort games alphabetically by name
-    if (system->game_count > 0)
-        qsort(system->games, system->game_count, sizeof(Game), compare_games);
-
-    printf("Found %d games for %s\n", system->game_count, system->name);
+    if (sys->game_count > 0)
+        qsort(sys->games, sys->game_count, sizeof(Game), compare_games);
 }
 
-static bool load_font(void)
+static void init_curses(void)
 {
-    int img_flags = IMG_INIT_PNG;
-    if (!(IMG_Init(img_flags) & img_flags))
+    initscr();
+    cbreak();
+    noecho();
+    curs_set(0);
+
+    if (has_colors())
     {
-        fprintf(stderr, "SDL_image init failed: %s\n", IMG_GetError());
-        return false;
+        start_color();
+        use_default_colors();
+        init_pair(PAIR_DEFAULT, COLOR_WHITE, -1);
+        init_pair(PAIR_SELECTED, COLOR_GREEN, -1);
+        init_pair(PAIR_BATTERY_LOW, COLOR_RED, -1);
+        init_pair(PAIR_BATTERY_CHARGING, COLOR_GREEN, -1);
     }
-
-    SDL_Surface *font_surface = IMG_Load("/usr/share/mimiki/assets/font.png");
-    if (!font_surface)
-    {
-        fprintf(stderr, "Failed to load font.png: %s\n", IMG_GetError());
-        return false;
-    }
-
-    font_texture = SDL_CreateTextureFromSurface(renderer, font_surface);
-    SDL_FreeSurface(font_surface);
-
-    if (!font_texture)
-    {
-        fprintf(stderr, "Failed to create font texture: %s\n", SDL_GetError());
-        return false;
-    }
-
-    printf("Bitmap font loaded successfully\n");
-    return true;
 }
 
-static bool init_sdl(void)
+static void cleanup_curses(void)
 {
-    setenv("SDL_VIDEODRIVER", "kmsdrm", 1);
-    while (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) < 0)
-    {
-        usleep(250000);
-    }
+    endwin();
+}
 
-    window = SDL_CreateWindow("MIMIKI",
-                              SDL_WINDOWPOS_UNDEFINED,
-                              SDL_WINDOWPOS_UNDEFINED,
-                              SCREEN_WIDTH, SCREEN_HEIGHT,
-                              SDL_WINDOW_FULLSCREEN | SDL_WINDOW_VULKAN);
-
-    if (!window)
-    {
-        fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
-        SDL_Quit();
+static bool read_battery(void)
+{
+    long now = monotonic_ms();
+    if (battery_capacity >= 0 && (now - battery_last_read_ms) < BATTERY_READ_MS)
         return false;
-    }
+    battery_last_read_ms = now;
 
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    int old_capacity = battery_capacity;
+    bool old_charging = battery_charging;
 
-    if (!renderer)
-    {
-        fprintf(stderr, "SDL_CreateRenderer failed: %s\n", SDL_GetError());
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return false;
-    }
-
-    if (!load_font())
-    {
-        SDL_DestroyRenderer(renderer);
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return false;
-    }
-
-    for (int i = 0; i < SDL_NumJoysticks(); i++)
-    {
-        if (SDL_IsGameController(i))
-        {
-            gamepad = SDL_GameControllerOpen(i);
-            if (gamepad)
-            {
-                printf("Gamepad opened: %s\n", SDL_GameControllerName(gamepad));
-                break;
-            }
-        }
-    }
-
-    printf("SDL2 initialized successfully (KMS/DRM backend)\n");
-    return true;
-}
-
-static void cleanup_sdl(void)
-{
-    if (gamepad)
-    {
-        SDL_GameControllerClose(gamepad);
-        gamepad = NULL;
-    }
-    if (font_texture)
-    {
-        SDL_DestroyTexture(font_texture);
-        font_texture = NULL;
-    }
-    if (renderer)
-    {
-        SDL_DestroyRenderer(renderer);
-        renderer = NULL;
-    }
-    if (window)
-    {
-        SDL_DestroyWindow(window);
-        window = NULL;
-    }
-    IMG_Quit();
-    SDL_Quit();
-}
-
-static void draw_text_rgb(int x, int y, const char *text, Uint8 r, Uint8 g, Uint8 b)
-{
-    if (!text || !font_texture)
-        return;
-
-    SDL_SetTextureColorMod(font_texture, r, g, b);
-
-    int cursor_x = x;
-    int cursor_y = y;
-
-    for (const char *c = text; *c != '\0'; c++)
-    {
-        unsigned char ch = (unsigned char)*c;
-
-        // Only render supported ASCII characters
-        if (ch < FONT_FIRST_CHAR || ch > FONT_LAST_CHAR)
-        {
-            cursor_x += FONT_CHAR_WIDTH;
-            continue;
-        }
-
-        // Calculate position in atlas
-        int char_index = ch - FONT_FIRST_CHAR;
-        int atlas_x = (char_index % FONT_ATLAS_COLS) * FONT_CHAR_WIDTH;
-        int atlas_y = (char_index / FONT_ATLAS_COLS) * FONT_CHAR_HEIGHT;
-
-        SDL_Rect src_rect = {atlas_x, atlas_y, FONT_CHAR_WIDTH, FONT_CHAR_HEIGHT};
-        SDL_Rect dst_rect = {cursor_x, cursor_y, FONT_CHAR_WIDTH, FONT_CHAR_HEIGHT};
-
-        SDL_RenderCopy(renderer, font_texture, &src_rect, &dst_rect);
-
-        cursor_x += FONT_CHAR_WIDTH;
-    }
-
-    SDL_SetTextureColorMod(font_texture, 255, 255, 255);
-}
-
-static void draw_text(int x, int y, const char *text, bool selected)
-{
-    if (selected)
-        draw_text_rgb(x, y, text, 100, 255, 100);
-    else
-        draw_text_rgb(x, y, text, 255, 255, 255);
-}
-
-static char batt_cap_path[80]  = "";
-static char batt_stat_path[80] = "";
-
-static bool find_battery_supply(void)
-{
-    DIR *dir = opendir("/sys/class/power_supply");
-    if (!dir)
-        return false;
-
-    struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL)
-    {
-        if (entry->d_name[0] == '.')
-            continue;
-
-        char type_path[96];
-        snprintf(type_path, sizeof(type_path),
-                 "/sys/class/power_supply/%s/type", entry->d_name);
-
-        FILE *fp = fopen(type_path, "r");
-        if (!fp)
-            continue;
-
-        char type[32] = {0};
-        fgets(type, sizeof(type), fp);
-        fclose(fp);
-
-        if (strncmp(type, "Battery", 7) == 0)
-        {
-            snprintf(batt_cap_path, sizeof(batt_cap_path),
-                     "/sys/class/power_supply/%s/capacity", entry->d_name);
-            snprintf(batt_stat_path, sizeof(batt_stat_path),
-                     "/sys/class/power_supply/%s/status", entry->d_name);
-            printf("Battery supply found: %s\n", entry->d_name);
-            closedir(dir);
-            return true;
-        }
-    }
-
-    closedir(dir);
-    return false;
-}
-
-static void read_battery(void)
-{
-    if (batt_cap_path[0] == '\0')
-    {
-        if (!find_battery_supply())
-        {
-            battery_capacity = -1;
-            return;
-        }
-    }
-
-    Uint32 now = SDL_GetTicks();
-    if (battery_capacity >= 0 && (now - battery_last_read) < BATTERY_READ_MS)
-        return;
-    battery_last_read = now;
-
-    FILE *fp = fopen(batt_cap_path, "r");
+    FILE *fp = fopen("/sys/class/power_supply/rk817-battery/capacity", "r");
     if (fp) {
         if (fscanf(fp, "%d", &battery_capacity) != 1)
             battery_capacity = -1;
         fclose(fp);
     }
 
-    fp = fopen(batt_stat_path, "r");
+    fp = fopen("/sys/class/power_supply/rk817-battery/status", "r");
     if (fp) {
         char status[32] = {0};
         fgets(status, sizeof(status), fp);
@@ -425,30 +246,26 @@ static void read_battery(void)
     } else {
         battery_charging = false;
     }
+
+    return (battery_capacity != old_capacity || battery_charging != old_charging);
 }
 
-// Battery indicator
-// Thresholds: 4=100-75%, 3=74-50%, 2=49-25%, 1=24-10%, 0=9-0% (red)
-static void draw_battery(int x, int y)
+static void draw_battery(int row, int col)
 {
-    read_battery();
     if (battery_capacity < 0)
         return;
 
     int capacity = battery_capacity;
     int level;
-    Uint8 r = 255, g = 255, b = 255;
+    int color_pair = PAIR_DEFAULT;
 
-    if (battery_charging && capacity >= 95) {
-        level = 4;
-        r = 0; g = 255; b = 0;
-    } else if (battery_charging) {
-        // Animate: cycle 1>2>3>4 every 600 ms
-        level = (int)((SDL_GetTicks() / 600) % 4) + 1;
-        r = 0; g = 255; b = 0;
-    } else if (capacity < 10) {
+    if (battery_charging) {
+        color_pair = PAIR_BATTERY_CHARGING;
+    }
+    if (capacity < 10) {
         level = 0;
-        r = 255; g = 0; b = 0;
+        if (!battery_charging)
+            color_pair = PAIR_BATTERY_LOW;
     } else if (capacity < 25) {
         level = 1;
     } else if (capacity < 50) {
@@ -459,152 +276,144 @@ static void draw_battery(int x, int y)
         level = 4;
     }
 
-    // ASCII Art Battery Builder
-    char indicator[7];
-    indicator[0] = '{';
+    char buf[9];
+    buf[0] = battery_charging ? '+' : ' ';
+    buf[1] = '{';
     for (int i = 0; i < 4; i++)
-        indicator[1 + i] = (i >= 4 - level) ? '*' : ' ';
-    indicator[5] = ']';
-    indicator[6] = '\0';
+        buf[2 + i] = (i >= 4 - level) ? '#' : ' ';
+    buf[6] = ']';
+    buf[7] = '\0';
 
-    draw_text_rgb(x, y, indicator, r, g, b);
+    attron(COLOR_PAIR(color_pair));
+    mvprintw(row, col, "%s", buf);
+    attroff(COLOR_PAIR(color_pair));
 }
 
 static void render_system_menu(void)
 {
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    SDL_RenderClear(renderer);
+    erase();
 
-    // Title
-    draw_text(272, 40, "MIMIKI", false);
+    // Title centered in usable area
+    const char *title = "MIMIKI";
+    int title_col = MARGIN + (USABLE_COLS - (int)strlen(title)) / 2;
+    mvprintw(HEADER_ROW, title_col, "%s", title);
 
-    // Battery indicator
-    draw_battery(498, 40);
+    draw_battery(HEADER_ROW - 1, BATTERY_COL);
 
     // System list
-    int y = 120;
     for (int i = 0; i < MAX_SYSTEMS; i++)
     {
+        int row = CONTENT_ROW + (i * 2);
         bool selected = (i == current_system);
 
-        // Selection indicator
         if (selected)
-            draw_text(80, y, ">", true);
+        {
+            attron(COLOR_PAIR(PAIR_SELECTED));
+            mvprintw(row, MARGIN + 1, ">");
+        }
 
-        draw_text(110, y, systems[i].name, selected);
+        int pair = selected ? PAIR_SELECTED : PAIR_DEFAULT;
+        attron(COLOR_PAIR(pair));
+        mvprintw(row, MARGIN + 3, "%s", systems[i].name);
+        attroff(COLOR_PAIR(pair));
 
-        // Game count
         char count[32];
         snprintf(count, sizeof(count), "(%d games)", systems[i].game_count);
-        draw_text(380, y, count, false);
+        mvprintw(row, MARGIN + 26, "%s", count);
 
-        y += 50;
+        if (selected)
+            attroff(COLOR_PAIR(PAIR_SELECTED));
     }
 
-    // Instructions
-    draw_text(120, 396, "D-PAD: Navigate  A: Select", false);
+    mvprintw(FOOTER_ROW, MARGIN + 2, "D-PAD: Navigate  A: Select");
 
-    SDL_RenderPresent(renderer);
+    refresh();
 }
-
-// Max characters that fit in the game name column (x=110 to x=630, 16px/char)
-#define GAME_NAME_MAX_CHARS 27
-
-static int   scroll_offset     = 0;
-static int   last_scrolled_game = -1;
-static Uint32 scroll_last_ms   = 0;
 
 static void render_game_menu(void)
 {
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    SDL_RenderClear(renderer);
+    erase();
 
     System *sys = &systems[current_system];
 
-    // Title
-    int title_width = strlen(sys->name) * FONT_CHAR_WIDTH;
-    int title_x = (SCREEN_WIDTH - title_width) / 2;
-    draw_text(title_x, 40, sys->name, false);
+    // Title centered
+    int title_col = MARGIN + (USABLE_COLS - (int)strlen(sys->name)) / 2;
+    mvprintw(HEADER_ROW, title_col, "%s", sys->name);
 
-    // Battery indicator
-    draw_battery(498, 40);
-
-    // Advance scroll state for the selected game
-    Uint32 now = SDL_GetTicks();
-    if (current_game != last_scrolled_game) {
-        scroll_offset      = 0;
-        scroll_last_ms     = now;
-        last_scrolled_game = current_game;
-    } else if (now - scroll_last_ms >= 500) {
-        int name_len = (int)strlen(sys->games[current_game].name);
-        if (name_len > GAME_NAME_MAX_CHARS) {
-            scroll_offset++;
-            if (scroll_offset + GAME_NAME_MAX_CHARS > name_len)
-                scroll_offset = 0;
-        }
-        scroll_last_ms = now;
-    }
+    draw_battery(HEADER_ROW - 1, BATTERY_COL);
 
     // Game list
-    int games_per_page = 10;
-    int start_idx = (current_game / games_per_page) * games_per_page;
-    int y = 80;
+    int start_idx = (current_game / GAMES_PER_PAGE) * GAMES_PER_PAGE;
 
-    for (int i = start_idx; i < start_idx + games_per_page && i < sys->game_count; i++)
+    for (int i = start_idx; i < start_idx + GAMES_PER_PAGE && i < sys->game_count; i++)
     {
+        int row = CONTENT_ROW + (i - start_idx);
         bool selected = (i == current_game);
         const char *full_name = sys->games[i].name;
         int name_len = (int)strlen(full_name);
 
-        // Build display name: scroll if selected & long, truncate otherwise
+        // For unselected long names, scroll_offset is irrelevant (always 0)
+        int offset = selected ? scroll_offset : 0;
         char display_name[GAME_NAME_MAX_CHARS + 1];
+
         if (name_len <= GAME_NAME_MAX_CHARS) {
             strncpy(display_name, full_name, sizeof(display_name));
-        } else if (selected) {
-            strncpy(display_name, full_name + scroll_offset, GAME_NAME_MAX_CHARS);
             display_name[GAME_NAME_MAX_CHARS] = '\0';
         } else {
-            strncpy(display_name, full_name, GAME_NAME_MAX_CHARS - 3);
-            display_name[GAME_NAME_MAX_CHARS - 3] = '\0';
-            strcat(display_name, "...");
+            bool can_scroll_left = (offset > 0);
+            bool can_scroll_right = (offset + GAME_NAME_MAX_CHARS < name_len);
+
+            strncpy(display_name, full_name + offset, GAME_NAME_MAX_CHARS);
+            display_name[GAME_NAME_MAX_CHARS] = '\0';
+
+            if (can_scroll_left)
+                display_name[0] = '<';
+            if (can_scroll_right)
+                display_name[GAME_NAME_MAX_CHARS - 1] = '>';
         }
 
-        // Selection indicator
         if (selected)
-            draw_text(80, y, ">", true);
+        {
+            attron(COLOR_PAIR(PAIR_SELECTED));
+            mvprintw(row, MARGIN + 1, ">");
+        }
 
-        draw_text(110, y, display_name, selected);
-        y += 30;
+        int pair = selected ? PAIR_SELECTED : PAIR_DEFAULT;
+        attron(COLOR_PAIR(pair));
+        mvprintw(row, MARGIN + 3, "%s", display_name);
+        attroff(COLOR_PAIR(pair));
+
+        if (selected)
+            attroff(COLOR_PAIR(PAIR_SELECTED));
     }
 
-    // Instructions
-    draw_text(120, 396, "D-PAD: Navigate  A: Launch", false);
-    draw_text(120, 420, "                 B:  Back", false);
-
-    // Page indicator if needed
-    if (sys->game_count > games_per_page)
+    // Footer
+    if (sys->game_count > GAMES_PER_PAGE)
     {
-        int current_page = (current_game / games_per_page) + 1;
-        int total_pages = (sys->game_count + games_per_page - 1) / games_per_page;
-        char page_info[32];
-        snprintf(page_info, sizeof(page_info), "PAGE : %d/%d", current_page, total_pages);
-        draw_text(120, 420, page_info, false);
+        int current_page = (current_game / GAMES_PER_PAGE) + 1;
+        int total_pages = (sys->game_count + GAMES_PER_PAGE - 1) / GAMES_PER_PAGE;
+        mvprintw(FOOTER_ROW, MARGIN + 2, "PAGE %d/%d", current_page, total_pages);
+        mvprintw(FOOTER_ROW, MARGIN + 19, "A: Launch B: Back");
+    }
+    else
+    {
+        mvprintw(FOOTER_ROW, MARGIN + 2, "D-PAD: Navigate  A: Launch B: Back");
     }
 
-    SDL_RenderPresent(renderer);
+    refresh();
 }
 
 static void launch_game(System *sys, Game *game)
 {
-    printf("Launching: %s (%s)\n", game->name, game->path);
-    cleanup_sdl();
+    cleanup_curses();
 
     const char *cpu_gov = "schedutil";
     const char *gpu_gov = "simple_ondemand";
 
-    if (strcmp(sys->short_name, "n64") == 0)
+    if ((strcmp(sys->short_name, "n64") == 0) ||
+        (strcmp(sys->short_name, "dc") == 0))
         gpu_gov = "performance";
-    
+
     if (strcmp(sys->short_name, "stn") == 0)
         cpu_gov = "performance";
 
@@ -614,7 +423,15 @@ static void launch_game(System *sys, Game *game)
     pid_t pid = fork();
     if (pid == 0)
     {
-        // Child process
+        // Redirect child output to log so it doesn't clobber the console
+        int log_fd = open("/mnt/games/data/mimiki.log",
+                          O_WRONLY | O_CREAT | O_APPEND, 0644);
+        if (log_fd >= 0) {
+            dup2(log_fd, STDOUT_FILENO);
+            dup2(log_fd, STDERR_FILENO);
+            close(log_fd);
+        }
+
         if (strcmp(sys->short_name, "n64") == 0)
         {
             setenv("XDG_CACHE_HOME", "/mnt/games/data/.cache", 1);
@@ -639,155 +456,171 @@ static void launch_game(System *sys, Game *game)
             execl("/usr/bin/PPSSPPSDL", sys->emulator, game->path, (char *)NULL);
         }
 
-        fprintf(stderr, "Failed to launch %s: %s\n", sys->emulator, strerror(errno));
+        _exit(1);
     }
     else if (pid > 0)
     {
-        // Parent process
         int status;
         while (waitpid(pid, &status, WNOHANG) == 0)
         {
-            int hotkey = input_monitor_check_hotkeys();
-            if (hotkey == HOTKEY_EXIT_EMU || hotkey == HOTKEY_SHUTDOWN) {
+            InputEvents ev = {0};
+            input_monitor_poll(&ev);
+            if (ev.exit_emu || ev.shutdown) {
                 kill(pid, SIGTERM);
-                usleep(250000); // Minor pause to let KMSDRM release itself
+                usleep(250000);
                 break;
             }
             usleep(50000);
         }
-
-        printf("Emulator exited\n");
-    }
-    else
-    {
-        // Fork failed
-        fprintf(stderr, "Fork failed\n");
     }
 
-    init_sdl();
+    init_curses();
 
     set_cpu_governor("powersave");
     set_gpu_governor("powersave");
 }
 
-static void handle_input(SDL_Event *event)
+static bool handle_input(InputEvents *ev)
 {
-    if (event->type == SDL_QUIT)
-        exit(0);
+    bool dirty = false;
 
-    // Gamepad inputs
-    if (event->type == SDL_CONTROLLERBUTTONDOWN)
+    if (ev->nav_up)
     {
-        switch (event->cbutton.button)
+        if (in_game_list)
         {
-        case SDL_CONTROLLER_BUTTON_DPAD_UP:
-            if (in_game_list)
-            {
-                if (current_game > 0)
-                    current_game--;
-            }
-            else
-            {
-                if (current_system > 0)
-                    current_system--;
-            }
-            break;
+            if (current_game > 0)
+                current_game--;
+        }
+        else
+        {
+            if (current_system > 0)
+                current_system--;
+        }
+        dirty = true;
+    }
 
-        case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
-            if (in_game_list)
-            {
-                System *sys = &systems[current_system];
-                if (current_game < sys->game_count - 1)
-                    current_game++;
-            }
-            else
-            {
-                if (current_system < MAX_SYSTEMS - 1)
-                    current_system++;
-            }
-            break;
+    if (ev->nav_down)
+    {
+        if (in_game_list)
+        {
+            System *sys = &systems[current_system];
+            if (current_game < sys->game_count - 1)
+                current_game++;
+        }
+        else
+        {
+            if (current_system < MAX_SYSTEMS - 1)
+                current_system++;
+        }
+        dirty = true;
+    }
 
-        // A Button on Device = East button (SDL B)
-        case SDL_CONTROLLER_BUTTON_B:
-            if (in_game_list)
-            {
-                System *sys = &systems[current_system];
-                if (sys->game_count > 0)
-                    launch_game(sys, &sys->games[current_game]);
-            }
-            else
-            {
-                System *sys = &systems[current_system];
-                if (sys->game_count > 0)
-                {
-                    in_game_list = true;
-                    current_game = 0;
-                }
-            }
-            break;
-
-        // B Button on Device = South button (SDL A)
-        case SDL_CONTROLLER_BUTTON_A:
-            if (in_game_list)
-            {
-                in_game_list = false;
-                current_game = 0;
-            }
-            break;
+    if (ev->nav_left && in_game_list)
+    {
+        if (scroll_offset > 0)
+        {
+            scroll_offset--;
+            dirty = true;
         }
     }
+
+    if (ev->nav_right && in_game_list)
+    {
+        System *sys = &systems[current_system];
+        int name_len = (int)strlen(sys->games[current_game].name);
+        if (scroll_offset + GAME_NAME_MAX_CHARS < name_len)
+        {
+            scroll_offset++;
+            dirty = true;
+        }
+    }
+
+    if (ev->nav_select)
+    {
+        if (in_game_list)
+        {
+            System *sys = &systems[current_system];
+            if (sys->game_count > 0)
+                launch_game(sys, &sys->games[current_game]);
+        }
+        else
+        {
+            System *sys = &systems[current_system];
+            if (sys->game_count > 0)
+            {
+                in_game_list = true;
+                current_game = 0;
+            }
+        }
+        dirty = true;
+    }
+
+    if (ev->nav_back)
+    {
+        if (in_game_list)
+        {
+            in_game_list = false;
+            current_game = 0;
+        }
+        dirty = true;
+    }
+
+    // Reset scroll when selection changes
+    if (current_game != last_scrolled_game)
+    {
+        scroll_offset = 0;
+        last_scrolled_game = current_game;
+    }
+
+    return dirty;
 }
 
-int main()
+int main(void)
 {
-    printf("MIMIKI Launcher - Starting...\n");
-
-    if (!init_sdl())
-        return 1;
-
     if (!input_monitor_init())
-        fprintf(stderr, "Warning: Input monitoring unavailable\n");
+        fprintf(stderr, "Warning: Menu controls unavailable!\n");
 
     for (int i = 0; i < MAX_SYSTEMS; i++)
         scan_games(&systems[i]);
 
     set_cpu_governor("powersave");
     set_gpu_governor("powersave");
-    printf("Standing by...\n");
 
-    SDL_Event event;
+    init_curses();
+
+    // Initial draw
+    render_system_menu();
 
     while (true)
-    { 
-        while (SDL_PollEvent(&event))
-            handle_input(&event);
+    {
+        InputEvents ev = {0};
+        input_monitor_poll(&ev);
 
-        if (in_game_list)
-            render_game_menu();
-        else
-            render_system_menu();
-
-        if (input_monitor_check_hotkeys() == HOTKEY_SHUTDOWN) {
-            if (renderer) {
-                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-                SDL_RenderClear(renderer);
-                draw_text(460, 400, "mata ne!", false);
-                SDL_RenderPresent(renderer);
-                SDL_Delay(1000);
-            }
+        if (ev.shutdown) {
+            erase();
+            mvprintw(FOOTER_ROW, MARGIN + USABLE_COLS - 8, "mata ne!");
+            refresh();
+            usleep(1000000);
             system("poweroff");
             break;
         }
 
-        SDL_Delay(50); // ~20 FPS is fine for a basic menu
-        if (!backlight_on) // First render should be done by now
+        bool dirty = handle_input(&ev);
+        if (read_battery())
+            dirty = true;
+
+        if (dirty)
         {
-            system("echo 132 > /sys/class/backlight/backlight/brightness");
-            backlight_on = true;
+            if (in_game_list)
+                render_game_menu();
+            else
+                render_system_menu();
         }
+
+        usleep(50000);
     }
 
     input_monitor_cleanup();
-    cleanup_sdl();
+    cleanup_curses();
     return 0;
 }

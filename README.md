@@ -1,12 +1,12 @@
 # MIMIKI - Minimal Miyoo Kiosk
 
 A minimal emulation platform for the Miyoo Flip (RK3566).
-MIMIKI provides a lightweight Linux OS image with a custom SDL2 launcher
+MIMIKI provides a lightweight Linux OS image with a custom ncurses-based launcher
 and pre-configured emulators for N64, Saturn, Dreamcast, PS1, and PSP.
 
 ---
 
-## UI Previews (OUTDATED)
+## UI Previews
 
 <img src="main_menu.png" width="49%" /> <img src="game_menu.png" width="49%" />
 

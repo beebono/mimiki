@@ -13,7 +13,6 @@ static struct timespec power_press_time = {0};
 static struct timespec last_wake_time = {0};
 static bool power_button_held = false;
 static bool mode_button_held = false;
-static bool start_button_held = false;
 static bool headphones_inserted = false;
 
 // Brightness: 4-100% in 7 steps of 16, default to ~50%
@@ -42,7 +41,6 @@ static int find_device_by_name(const char *device_name)
         ioctl(fd, EVIOCGNAME(sizeof(name)), name);
         if (strstr(name, device_name) != NULL)
         {
-            printf("Found input device: %s (%s)\n", path, name);
             closedir(dir);
             return fd;
         }
@@ -57,7 +55,7 @@ bool input_monitor_init(void)
 {
     num_devices = 0;
     const char *device_names[] = {
-        "joypad",    // Mode
+        "joypad",    // Mode + D-pad + face buttons
         "pwrkey",    // Power
         "gpio-keys", // Volume + Lid
         "rk817_ext", // Headphones
@@ -70,23 +68,15 @@ bool input_monitor_init(void)
         {
             input_fds[num_devices++] = fd;
         }
-        else
-        {
-            fprintf(stderr, "Warning: Could not find device '%s'\n", device_names[i]);
-        }
     }
 
     if (num_devices == 0)
-    {
-        fprintf(stderr, "Failed to open any input devices\n");
         return false;
-    }
 
-    printf("Monitoring %d input device(s)\n", num_devices);
     return true;
 }
 
-int input_monitor_check_hotkeys(void)
+void input_monitor_poll(InputEvents *events)
 {
     struct input_event ev;
 
@@ -121,8 +111,10 @@ int input_monitor_check_hotkeys(void)
                                    (now.tv_nsec - power_press_time.tv_nsec) / 1000000;
                     power_button_held = false;
 
-                    if (held_ms >= 1750)
-                        return HOTKEY_SHUTDOWN;
+                    if (held_ms >= 1750) {
+                        events->shutdown = true;
+                        return;
+                    }
 
                     long last_wake_ms = (now.tv_sec - last_wake_time.tv_sec) * 1000 +
                                         (now.tv_nsec - last_wake_time.tv_nsec) / 1000000;
@@ -138,9 +130,8 @@ int input_monitor_check_hotkeys(void)
             case KEY_VOLUMEUP:
                 if (ev.value != 1)
                     continue;
-                if (mode_button_held && backlight_on)
+                if (mode_button_held)
                 {
-                    // Can't get brighter than physically possible
                     if (current_brightness < 100)
                     {
                         current_brightness += 16;
@@ -160,9 +151,8 @@ int input_monitor_check_hotkeys(void)
             case KEY_VOLUMEDOWN:
                 if (ev.value != 1)
                     continue;
-                if (mode_button_held && backlight_on)
+                if (mode_button_held)
                 {
-                    // Don't go completely dark
                     if (current_brightness > 4)
                     {
                         current_brightness -= 16;
@@ -180,9 +170,8 @@ int input_monitor_check_hotkeys(void)
                 break;
 
             case BTN_START:
-                start_button_held = (ev.value == 1 || ev.value == 2);
                 if (ev.value == 1 && mode_button_held)
-                    return HOTKEY_EXIT_EMU;
+                    events->exit_emu = true;
                 break;
 
             case SW_LID:
@@ -194,7 +183,6 @@ int input_monitor_check_hotkeys(void)
                 break;
 
             case SW_HEADPHONE_INSERT:
-                // Only switch modes once on change rather than per loop
                 if (ev.value == 0 && headphones_inserted)
                 {
                     system("amixer -q -c 0 cset name='Playback Mux' SPK");
@@ -205,6 +193,38 @@ int input_monitor_check_hotkeys(void)
                     system("amixer -q -c 0 cset name='Playback Mux' HP");
                     headphones_inserted = true;
                 }
+                break;
+
+            // Navigation
+            case BTN_DPAD_UP:
+                if (ev.value == 1)
+                    events->nav_up = true;
+                break;
+
+            case BTN_DPAD_DOWN:
+                if (ev.value == 1)
+                    events->nav_down = true;
+                break;
+
+            case BTN_DPAD_LEFT:
+                if (ev.value == 1)
+                    events->nav_left = true;
+                break;
+
+            case BTN_DPAD_RIGHT:
+                if (ev.value == 1)
+                    events->nav_right = true;
+                break;
+
+            case BTN_EAST:
+                if (ev.value == 1)
+                    events->nav_select = true;
+                break;
+
+            case BTN_SOUTH:
+                if (ev.value == 1)
+                    events->nav_back = true;
+                break;
             }
         }
     }
@@ -216,10 +236,8 @@ int input_monitor_check_hotkeys(void)
         long held_ms = (now.tv_sec - power_press_time.tv_sec) * 1000 +
                        (now.tv_nsec - power_press_time.tv_nsec) / 1000000;
         if (held_ms >= 1750)
-            return HOTKEY_SHUTDOWN;
+            events->shutdown = true;
     }
-
-    return HOTKEY_NONE;
 }
 
 void input_monitor_cleanup(void)
@@ -235,5 +253,4 @@ void input_monitor_cleanup(void)
     num_devices = 0;
     mode_button_held = false;
     power_button_held = false;
-    start_button_held = false;
 }

@@ -1,0 +1,83 @@
+diff --git a/arch/arm/mach-rockchip/rk3568/rk3568.c b/arch/arm/mach-rockchip/rk3568/rk3568.c
+index c2b96902d2d..b8730b2ee22 100644
+--- a/arch/arm/mach-rockchip/rk3568/rk3568.c
++++ b/arch/arm/mach-rockchip/rk3568/rk3568.c
+@@ -6,7 +6,10 @@
+ #define LOG_CATEGORY LOGC_ARCH
+ 
+ #include <dm.h>
++#include <env.h>
+ #include <misc.h>
++#include <power/pmic.h>
++#include <power/rk8xx_pmic.h>
+ #include <asm/armv8/mmu.h>
+ #include <asm/arch-rockchip/bootrom.h>
+ #include <asm/arch-rockchip/grf_rk3568.h>
+@@ -200,3 +203,28 @@ int checkboard(void)
+ 
+ 	return 0;
+ }
++
++int rk_board_late_init(void)
++{
++	struct udevice *dev;
++	int on_source;
++	int ret;
++
++	ret = uclass_first_device_err(UCLASS_PMIC, &dev);
++	if (ret)
++		return 0;
++
++	if (device_is_compatible(dev, "rockchip,rk817") ||
++	    device_is_compatible(dev, "rockchip,rk809"))
++		on_source = pmic_reg_read(dev, RK817_ON_SOURCE);
++	else
++		on_source = pmic_reg_read(dev, RK8XX_ON_SOURCE);
++
++	if (on_source < 0)
++		return 0;
++
++	if (on_source & RK8XX_ON_PLUG_IN)
++		env_set("boot_reason", "boot_reason=charger");
++
++	return 0;
++}
+diff --git a/configs/quartz64-a-rk3566_defconfig b/configs/quartz64-a-rk3566_defconfig
+index c3dd29dc0f6..fc861da2a5d 100644
+--- a/configs/quartz64-a-rk3566_defconfig
++++ b/configs/quartz64-a-rk3566_defconfig
+@@ -14,6 +14,8 @@ CONFIG_SYS_LOAD_ADDR=0xc00800
+ CONFIG_SF_DEFAULT_BUS=4
+ CONFIG_DEBUG_UART_BASE=0xFE660000
+ CONFIG_DEBUG_UART_CLOCK=24000000
++CONFIG_EFI_LOADER=n
++CONFIG_ROCKCHIP_RK8XX_DISABLE_BOOT_ON_POWERON=n
+ CONFIG_SPL_SPI_FLASH_SUPPORT=y
+ CONFIG_SPL_SPI=y
+ CONFIG_PCI=y
+@@ -66,10 +68,12 @@ CONFIG_SPI_FLASH_SFDP_SUPPORT=y
+ CONFIG_SPI_FLASH_GIGADEVICE=y
+ CONFIG_SPI_FLASH_MACRONIX=y
+ CONFIG_SPI_FLASH_WINBOND=y
+-CONFIG_PHY_MOTORCOMM=y
+-CONFIG_DWC_ETH_QOS=y
+-CONFIG_DWC_ETH_QOS_ROCKCHIP=y
++# CONFIG_PHY_MOTORCOMM is not set
++# CONFIG_DWC_ETH_QOS is not set
++# CONFIG_DWC_ETH_QOS_ROCKCHIP is not set
+ CONFIG_NVME_PCI=y
++CONFIG_USE_PREBOOT=y
++CONFIG_PREBOOT="gpio clear 19"
+ CONFIG_PCIE_DW_ROCKCHIP=y
+ CONFIG_PHY_ROCKCHIP_INNO_USB2=y
+ CONFIG_PHY_ROCKCHIP_NANENG_COMBOPHY=y
+@@ -79,7 +83,8 @@ CONFIG_PMIC_RK8XX=y
+ CONFIG_SPL_DM_REGULATOR=y
+ CONFIG_SPL_DM_REGULATOR_FIXED=y
+ CONFIG_REGULATOR_RK8XX=y
+-CONFIG_PWM_ROCKCHIP=y
++# CONFIG_PWM_ROCKCHIP is not set
++# CONFIG_VIDEO is not set
+ CONFIG_SPL_RAM=y
+ CONFIG_SCSI=y
+ CONFIG_BAUDRATE=1500000

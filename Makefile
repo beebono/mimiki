@@ -120,7 +120,8 @@ clean-all: clean
 	@$(MAKE) -C external/emulators/mupen64plus/rsp-hle/projects/unix APIDIR=. clean || true
 	@rm -r external/emulators/mupen64plus/video-gliden64/build 2>/dev/null || true
 	@$(MAKE) -C external/emulators/mupen64plus/ui-console/projects/unix APIDIR=. clean || true
-	@rm -r external/emulators/yabasanshiro/build 2>/dev/null || true
+# YabaSanshiro goes git things, -f is needed to prevent blockage
+	@rm -rf external/emulators/yabasanshiro/build 2>/dev/null || true
 	@rm -r external/emulators/flycast/build 2>/dev/null || true
 	@$(MAKE) -C external/emulators/pcsx-rearmed clean || true
 	@rm -r external/emulators/ppsspp/build 2>/dev/null || true

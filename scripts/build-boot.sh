@@ -15,9 +15,12 @@ BUILD_DIR="$REPO_ROOT/build"
 UBOOT_DIR="$REPO_ROOT/external/boot/u-boot"
 RKBIN_DIR="$REPO_ROOT/external/boot/rkbin"
 INITRAMFS_DIR="$BUILD_DIR/initramfs"
+CHARGE_MON_DIR="$REPO_ROOT/system/charge-monitor"
 TOOLS_DIR="$REPO_ROOT/external/tools"
 KERNEL_DIR="$REPO_ROOT/external/boot/linux"
-MALI_DIR="$REPO_ROOT/external/rocknix/mali_kbase/product/kernel/drivers/gpu/arm/midgard"
+MALI_DIR="$REPO_ROOT/external/rocknix/mali_kbase"
+JOYPAD_DIR="$REPO_ROOT/external/rocknix/rocknix-joypad"
+PANEL_DSI_DIR="$REPO_ROOT/external/rocknix/generic-dsi"
 DT_SOURCE="$REPO_ROOT/system/dts/rk3566-miyoo-flip.dts"
 DT_OVERLAYS_DIR="$REPO_ROOT/system/dts/overlays"
 CONFIG_DIR="$REPO_ROOT/system/config"
@@ -31,9 +34,6 @@ JOBS=$(nproc)
 UBOOT_DEFCONFIG="quartz64-a-rk3566_defconfig"
 BL31="$RKBIN_DIR/bin/rk35/rk3568_bl31_v1.45.elf"
 DDR_BIN="$RKBIN_DIR/bin/rk35/rk3566_ddr_1056MHz_v1.23.bin"
-
-# Kernel version (will be detected in build)
-KERNEL_VERSION=""
 
 print_step() {
     echo -e "${GREEN}==>${NC} $1" >&2
@@ -123,6 +123,13 @@ populate_initramfs() {
         print_error "Please run 'make tools' first!"
         exit 1
     fi
+
+    print_step "  Building charge-monitor..."
+    make -C "$CHARGE_MON_DIR" clean
+    make -C "$CHARGE_MON_DIR" CROSS_COMPILE="${CROSS_COMPILE}"
+    cp "$CHARGE_MON_DIR/charge-monitor" "$INITRAMFS_DIR/sbin/"
+    chmod +x "$INITRAMFS_DIR/sbin/charge-monitor"
+    print_step "  charge-monitor installed to initramfs"
 
     cp "$REPO_ROOT/system/initramfs/init" "$INITRAMFS_DIR/"
     chmod +x "$INITRAMFS_DIR/init"
@@ -226,6 +233,86 @@ install_uboot() {
     print_step "Bootloader binaries installed to $BUILD_DIR/boot/"
 }
 
+integrate_module_sources() {
+    print_step "Integrating module sources into kernel tree..."
+
+    # --- Mali kbase ---
+    local ARM_DIR="$KERNEL_DIR/drivers/gpu/arm"
+    local MALI_ARM_DIR="$MALI_DIR/product/kernel/drivers/gpu/arm"
+    if [ ! -e "$ARM_DIR" ]; then
+        ln -s "$MALI_ARM_DIR" "$ARM_DIR"
+        print_step "  Symlinked mali_kbase"
+    fi
+    if [ ! -d "$ARM_DIR/arbitration" ]; then
+        mkdir -p "$ARM_DIR/arbitration"
+        echo '# stub – arbitration module not present' > "$ARM_DIR/arbitration/Makefile"
+    fi
+    if ! grep -q "arm/" "$KERNEL_DIR/drivers/gpu/Makefile"; then
+        echo 'obj-y += arm/' >> "$KERNEL_DIR/drivers/gpu/Makefile"
+    fi
+    if ! grep -q 'drivers/gpu/arm/Kconfig' "$KERNEL_DIR/drivers/video/Kconfig"; then
+        sed -i '/^source "drivers\/gpu\/drm\/Kconfig"/a source "drivers/gpu/arm/Kconfig"' \
+            "$KERNEL_DIR/drivers/video/Kconfig"
+    fi
+    
+    print_step "  Mali kbase integrated"
+
+    # --- Rocknix singleadc joypad ---
+    local JOYPAD_DEST="$KERNEL_DIR/drivers/input/joystick/rocknix-singleadc-joypad"
+    mkdir -p "$JOYPAD_DEST"
+    for f in rocknix-singleadc-joypad.c rocknix-joypad.h; do
+        [ ! -e "$JOYPAD_DEST/$f" ] && ln -s "$JOYPAD_DIR/$f" "$JOYPAD_DEST/$f"
+    done
+    cat > "$JOYPAD_DEST/Kbuild" <<'EOF'
+# SPDX-License-Identifier: GPL-2.0
+obj-$(CONFIG_ROCKNIX_SINGLEADC_JOYPAD) += rocknix-singleadc-joypad.o
+EOF
+    if ! grep -q "rocknix-singleadc-joypad" "$KERNEL_DIR/drivers/input/joystick/Makefile"; then
+        echo 'obj-$(CONFIG_ROCKNIX_SINGLEADC_JOYPAD) += rocknix-singleadc-joypad/' \
+            >> "$KERNEL_DIR/drivers/input/joystick/Makefile"
+    fi
+    if ! grep -q "ROCKNIX_SINGLEADC_JOYPAD" "$KERNEL_DIR/drivers/input/joystick/Kconfig"; then
+        cat >> "$KERNEL_DIR/drivers/input/joystick/Kconfig" <<'EOF'
+
+config ROCKNIX_SINGLEADC_JOYPAD
+	tristate "ROCKNIX Single ADC Joypad (RK3566)"
+	depends on INPUT && OF
+	help
+	  ROCKNIX joypad driver for the Miyoo Flip and other RK3566
+	  handhelds using the Miyoo serial joypad protocol.
+EOF
+    fi
+    print_step "  Rocknix joypad integrated"
+
+    # --- Generic DSI panel ---
+    local PANEL_DEST="$KERNEL_DIR/drivers/gpu/drm/panel/panel-generic-dsi"
+    mkdir -p "$PANEL_DEST"
+    [ ! -e "$PANEL_DEST/panel-generic-dsi.c" ] && \
+        ln -s "$PANEL_DSI_DIR/panel-generic-dsi.c" "$PANEL_DEST/panel-generic-dsi.c"
+    cat > "$PANEL_DEST/Kbuild" <<'EOF'
+# SPDX-License-Identifier: GPL-2.0
+obj-$(CONFIG_DRM_PANEL_GENERIC_DSI) += panel-generic-dsi.o
+EOF
+    if ! grep -q "panel-generic-dsi" "$KERNEL_DIR/drivers/gpu/drm/panel/Makefile"; then
+        echo 'obj-$(CONFIG_DRM_PANEL_GENERIC_DSI) += panel-generic-dsi/' \
+            >> "$KERNEL_DIR/drivers/gpu/drm/panel/Makefile"
+    fi
+    if ! grep -q "DRM_PANEL_GENERIC_DSI" "$KERNEL_DIR/drivers/gpu/drm/panel/Kconfig"; then
+        cat >> "$KERNEL_DIR/drivers/gpu/drm/panel/Kconfig" <<'EOF'
+
+config DRM_PANEL_GENERIC_DSI
+	tristate "Generic MIPI-DSI panel (ROCKNIX)"
+	depends on DRM && DRM_MIPI_DSI && OF
+	help
+	  Generic MIPI-DSI panel driver for ROCKNIX devices
+	  including the Miyoo Flip.
+EOF
+    fi
+    print_step "  Generic DSI panel integrated"
+
+    print_step "Module sources integrated!"
+}
+
 configure_kernel() {
     local DT_DEST="$KERNEL_DIR/arch/arm64/boot/dts/rockchip"
     local MAKEFILE="$DT_DEST/Makefile"
@@ -234,15 +321,8 @@ configure_kernel() {
 
     cd "$KERNEL_DIR"
 
-    # Apply MIMIKI config
-    if [ -f "$CONFIG_DIR/mimiki.config" ]; then
-        cp "$CONFIG_DIR/mimiki.config" .config
-    else
-        print_error "MIMIKI config not found at $CONFIG_DIR/mimiki.config"
-        exit 1
-    fi
+    integrate_module_sources
 
-    # Integrate device tree
     if [ -f "$DT_SOURCE" ]; then
         cp "$DT_SOURCE" "$DT_DEST/"
         print_step "Copied rk3566-miyoo-flip.dts to kernel tree"
@@ -251,10 +331,16 @@ configure_kernel() {
         exit 1
     fi
 
-    # Add to Makefile if not already there
     if ! grep -q "rk3566-miyoo-flip.dtb" "$MAKEFILE"; then
         echo "dtb-\$(CONFIG_ARCH_ROCKCHIP) += rk3566-miyoo-flip.dtb" >> "$MAKEFILE"
         print_step "Added rk3566-miyoo-flip.dtb to Makefile"
+    fi
+
+    if [ -f "$CONFIG_DIR/mimiki.config" ]; then
+        cp "$CONFIG_DIR/mimiki.config" .config
+    else
+        print_error "MIMIKI config not found at $CONFIG_DIR/mimiki.config"
+        exit 1
     fi
 }
 
@@ -263,9 +349,7 @@ build_kernel() {
 
     cd "$KERNEL_DIR"
 
-    # Build kernel artifacts
     make -j${JOBS} Image
-    make -j${JOBS} modules
     make -j${JOBS} rockchip/rk3566-miyoo-flip.dtb
     mkdir -p "$BUILD_DIR/dt-overlays"
     for overlay in "$DT_OVERLAYS_DIR"/*.dts; do
@@ -276,89 +360,7 @@ build_kernel() {
         fi
     done
 
-    # Get version for later
-    KERNEL_VERSION=$(make -s --no-print-directory kernelrelease)
-
     print_step "Kernel built!"
-}
-
-install_int_modules() {
-    print_step "Installing modules to build directory..."
-
-    cd "$KERNEL_DIR"
-
-    mkdir -p "$BUILD_DIR/rootfs"
-    make -j${JOBS} INSTALL_MOD_PATH="$BUILD_DIR/rootfs" modules_install
-
-    # Strip modules to save space
-    find "$BUILD_DIR/rootfs/lib/modules" -name "*.ko" -exec ${CROSS_COMPILE}strip --strip-unneeded {} \;
-
-    print_step "Modules installed!"
-}
-
-build_out_of_tree_module() {
-    local module_name="$1"
-    local module_dir="$2"
-    local module_ko="$3"
-    shift 3
-    local make_args=("$@")
-
-    print_step "Building $module_name..."
-
-    if [ ! -d "$module_dir" ]; then
-        print_warning "$module_name source not found at $module_dir, skipping..."
-        return 0
-    fi
-
-    cd "$module_dir"
-
-    make -j${JOBS} ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} "${make_args[@]}"
-
-    if [ $? -eq 0 ]; then
-        if [ -n "$KERNEL_VERSION" ]; then
-            if [ -f "$module_dir/$module_ko" ]; then
-                local MODULE_DIR="$BUILD_DIR/rootfs/lib/modules/$KERNEL_VERSION/extra"
-                mkdir -p "$MODULE_DIR"
-
-                cp "$module_dir/$module_ko" "$MODULE_DIR/"
-                ${CROSS_COMPILE}strip --strip-unneeded "$MODULE_DIR/$module_ko"
-
-                print_step "$module_name built and installed!"
-            else
-                print_warning "$module_name module file $module_ko not found after build"
-                return 1
-            fi
-        fi
-    else
-        print_warning "$module_name build failed, skipping..."
-        return 1
-    fi
-}
-
-build_ext_modules() {
-    build_out_of_tree_module \
-        "Mali GPU driver" \
-        "$MALI_DIR" \
-        "mali_kbase.ko" \
-        KDIR="$KERNEL_DIR" \
-        CONFIG_MALI_MIDGARD=m \
-        CONFIG_MALI_PLATFORM_NAME=meson \
-        CONFIG_MALI_REAL_HW=y \
-        CONFIG_MALI_DEVFREQ=y \
-        CONFIG_MALI_GATOR_SUPPORT=y
-
-    build_out_of_tree_module \
-        "ROCKNIX joypad driver" \
-        "$REPO_ROOT/external/rocknix/rocknix-joypad" \
-        "rocknix-singleadc-joypad.ko" \
-        KERNEL_SRC="$KERNEL_DIR" \
-        DEVICE="RK3566"
-
-    build_out_of_tree_module \
-        "Generic DSI panel driver" \
-        "$REPO_ROOT/external/rocknix/generic-dsi" \
-        "panel-generic-dsi.ko" \
-        KERNEL_SRC="$KERNEL_DIR"
 }
 
 install_kernel() {
@@ -381,8 +383,6 @@ main() {
     install_uboot
     configure_kernel
     build_kernel
-    install_int_modules
-    build_ext_modules
     install_kernel
 
     echo "MIMIKI Kernel Build Complete!"
@@ -391,7 +391,6 @@ main() {
     echo "  Kernel:  $BUILD_DIR/boot/Image"
     echo "  DTB:     $BUILD_DIR/boot/rk3566-miyoo-flip.dtb"
     echo "  Overlays: $BUILD_DIR/dt-overlays/"
-    echo "  Modules: $BUILD_DIR/rootfs/lib/modules/$KERNEL_VERSION/"
 }
 
 main "$@"

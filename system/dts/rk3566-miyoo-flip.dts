@@ -60,7 +60,7 @@
 			240 241 242 243 244 245 246 247
 			248 249 250 251 252 253 254 255
 		>;
-		default-brightness-level = <0>;
+		default-brightness-level = <132>;
 	};
 
 	battery: battery {
@@ -336,7 +336,7 @@
 	assigned-clocks = <&pmucru CLK_RTC_32K>, <&cru PLL_GPLL>,
 			  <&pmucru PLL_PPLL>, <&cru PLL_VPLL>;
 	assigned-clock-rates = <32768>, <1200000000>,
-				   <200000000>, <1200000000>;
+			       <200000000>, <126400000>;
 };
 
 &tsadc {
@@ -391,7 +391,7 @@
 		panel_description =
 			"G size=68,121 delays=0,160,200,200,20 format=rgb888 lanes=2 flags=0xe03",
 
-			"M clock=34287 horizontal=640,150,130,120 vertical=480,20,38,12 default=1", /* 640x480@59.94Hz */
+			"M clock=32000 horizontal=640,150,120,120 vertical=480,20,6,12 default=1",
 
 			"I seq=11 wait=250",
 			"I seq=29 wait=32",

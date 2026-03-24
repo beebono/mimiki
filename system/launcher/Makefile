@@ -1,5 +1,4 @@
 # MIMIKI Launcher - Makefile
-# Cross-compiles the launcher for ARM64
 
 # Cross-compilation settings
 CROSS_COMPILE ?= aarch64-linux-gnu-
@@ -12,12 +11,9 @@ BUILD_DIR := build
 
 # Compiler flags
 CFLAGS := -Wall -Wextra -Wno-unused-result -O3 -flto=auto -std=c11
-CFLAGS += -I../../build/sdl2-install/usr/include
-CFLAGS += -I../../build/sdl2-install/usr/include/SDL2
 
 # Linker flags
-LDFLAGS := -L../../build/sdl2-install/usr/lib
-LIBS := -lSDL2 -lSDL2_image -lm -lpthread -ldl
+LIBS := -lncurses -lpthread
 
 # Target binary
 TARGET := mimiki-launcher
@@ -42,7 +38,7 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
 
 # Link executable
 $(BUILD_DIR)/$(TARGET): $(OBJS)
-	$(CC) $(LDFLAGS) $^ $(LIBS) -o $@
+	$(CC) $^ $(LIBS) -o $@
 	$(STRIP) --strip-unneeded $@
 	@echo "Built: $@"
 	@file $@

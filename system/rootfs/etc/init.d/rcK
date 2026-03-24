@@ -1,14 +1,7 @@
 #!/bin/sh
 # MIMIKI - System shutdown script
 
-echo "MIMIKI shutting down..."
-
-# Kill all processes
-killall5 -15
-
 # Sync and unmount games so things don't break
 sync
 umount /mnt/games 2>/dev/null
 umount /mnt/games2 2>/dev/null
-
-echo "mata ne!"

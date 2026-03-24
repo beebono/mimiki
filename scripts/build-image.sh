@@ -199,12 +199,12 @@ populate_boot_partition() {
 
     print_step "Creating EXTLINUX boot configuration..."
     mkdir -p "$mount_point/extlinux"
-    cat > "$mount_point/extlinux/extlinux.conf" <<EOF
+    cat > "$mount_point/extlinux/extlinux.conf" <<'EOF'
 LABEL MIMIKI
   KERNEL /Image
   FDT /rk3566-miyoo-flip.dtb
   FDTOVERLAYS /rk3566-undervolt-cpu-l3.dtbo
-  APPEND rootwait quiet loglevel=0 fbcon=map:7
+  APPEND rootwait quiet loglevel=0 fbcon=font:TER16x32 ${boot_reason}
 EOF
 
     sync

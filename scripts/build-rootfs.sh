@@ -84,14 +84,9 @@ install_launcher() {
         print_warning "Launcher not built! Run 'make launcher' first."
     fi
 
-    local SDL2_INSTALL="$BUILD_DIR/sdl2-install"
-    if [ -d "$SDL2_INSTALL/usr/share/mimiki" ]; then
-        mkdir -p "$ROOTFS_BUILD/usr/share/mimiki"
-        cp -a "$SDL2_INSTALL/usr/share/mimiki"/* "$ROOTFS_BUILD/usr/share/mimiki/"
-        print_step "Launcher assets installed!"
-    else
-        print_warning "Launcher assets not found! Reggie... my dude..."
-    fi
+    # ncurses terminfo support
+    mkdir -p "$ROOTFS_BUILD/usr/share/terminfo/l"
+    cp "/usr/share/terminfo/l/linux" "$ROOTFS_BUILD/usr/share/terminfo/l/"
 
     print_step "Launcher installed!"
 }
@@ -154,6 +149,10 @@ install_libraries() {
     cp -a "$REPO_ROOT/system/prebuilts/libmali-blobs"/icd.d/*.json "$ROOTFS_BUILD/usr/share/vulkan/icd.d/" || print_warning "Vulkan icd not found"
     cp -a "$SYSROOT"/libdrm.so* "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libdrm not found"
 
+    # Additional libraries (Launcher)
+    cp -L "$SYSROOT/libncurses.so.6" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libncurses not found"
+    cp -L "$SYSROOT/libtinfo.so.6" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libtinfo not found"
+
     # Additional libraries (SDL2)
     cp -a "$BUILD_DIR"/sdl2-install/usr/lib/libSDL2*.so* "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "SDL2 not found"
 
@@ -174,22 +173,6 @@ install_libraries() {
     # ppsspp covered by previous libraries
 
     print_step "Libraries installed!"
-}
-
-install_kernel_modules() {
-    print_step "Installing kernel modules..."
-
-    if [ -d "$BUILD_DIR/rootfs/lib/modules" ]; then
-        mkdir -p "$ROOTFS_BUILD/lib/modules"
-        cp -a "$BUILD_DIR/rootfs/lib/modules"/* "$ROOTFS_BUILD/lib/modules/"
-
-        # Remove development symlinks (build, source) that point to kernel source tree
-        find "$ROOTFS_BUILD/lib/modules" -type l \( -name "build" -o -name "source" \) -delete
-
-        print_step "Kernel modules installed!"
-    else
-        print_warning "No kernel modules found! Run 'make kernel' first."
-    fi
 }
 
 install_emulators() {
@@ -273,9 +256,9 @@ create_squashfs() {
 
     rm -f "$ROOTFS_SQUASHFS"
     mksquashfs "$ROOTFS_FINAL" "$ROOTFS_SQUASHFS" \
-        -comp xz \
-        -Xbcj arm \
-        -b 1M \
+        -comp zstd \
+        -Xcompression-level 1 \
+        -b 256K \
         -force-uid 0 \
         -force-gid 0 \
         -noappend
@@ -288,7 +271,6 @@ main() {
 
     check_dependencies
     populate_rootfs
-    install_kernel_modules
     install_libraries
     install_busybox
     install_alsa

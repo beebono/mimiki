@@ -1,5 +1,5 @@
-#ifndef INPUT_MONITOR_H
-#define INPUT_MONITOR_H
+#ifndef SHARED_H
+#define SHARED_H
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,14 +10,19 @@
 #include <fcntl.h>
 #include <time.h>
 
-extern bool backlight_on;
-
-#define HOTKEY_NONE       0
-#define HOTKEY_EXIT_EMU   1
-#define HOTKEY_SHUTDOWN   2
+typedef struct {
+    bool nav_up;
+    bool nav_down;
+    bool nav_left;
+    bool nav_right;
+    bool nav_select;
+    bool nav_back;
+    bool exit_emu;
+    bool shutdown;
+} InputEvents;
 
 bool input_monitor_init(void);
-int  input_monitor_check_hotkeys(void);
+void input_monitor_poll(InputEvents *events);
 void input_monitor_cleanup(void);
 
-#endif // INPUT_MONITOR_H
+#endif // SHARED_H
