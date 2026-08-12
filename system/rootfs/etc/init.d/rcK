@@ -4,4 +4,3 @@
 # Sync and unmount games so things don't break
 sync
 umount /mnt/games 2>/dev/null
-umount /mnt/games2 2>/dev/null

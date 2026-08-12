@@ -96,22 +96,21 @@ clean:
 	@rm -rf $(BUILD_DIR)
 
 clean-all: clean
-	$(call MSG_INFO,Cleaning boot builds...)
-	@$(MAKE) -C external/boot/u-boot mrproper || true
-	@$(MAKE) -C external/boot/linux mrproper || true
-	$(call MSG_INFO,Cleaning rocknix-sourced builds...)
-	@$(MAKE) -C external/rocknix/generic-dsi clean || true
-	@$(MAKE) -C external/rocknix/mali_kbase/product/kernel/drivers/gpu/arm/midgard KDIR=$(realpath ./external/boot/linux) clean || true
-	@$(MAKE) -C external/rocknix/rocknix-joypad clean || true
+	$(call MSG_INFO,Cleaning base builds...)
+	@$(MAKE) -C external/base/u-boot mrproper || true
+	@$(MAKE) -C external/base/linux mrproper || true
+	@$(MAKE) -C external/base/mali-kbase/product/kernel/drivers/gpu/arm/midgard KDIR=$(realpath ./external/base/linux) clean || true
 	$(call MSG_INFO,Cleaning tool builds...)
 	@$(MAKE) -C external/tools/busybox clean 2>/dev/null || true
 	@rm -r external/tools/exfatprogs/build 2>/dev/null || true
 	@$(MAKE) -C external/tools/gptfdisk clean || true
 	@rm -r external/tools/SDL2/build 2>/dev/null || true
+	@rm -r external/tools/SDL3/build 2>/dev/null || true
 	@rm -r external/tools/SDL2_image/build 2>/dev/null || true
 	@rm -r external/tools/alsa-utils/build 2>/dev/null || true
 	$(call MSG_INFO,Cleaning Launcher build...)
 	@$(MAKE) -C system/launcher clean || true
+	@$(MAKE) -C system/aggregator clean || true
 	$(call MSG_INFO,Cleaning Emulator builds...)
 # Some of these need APIDIR because ???? to clean, even if it's incorrect
 	@$(MAKE) -C external/emulators/mupen64plus/core/projects/unix clean || true
@@ -124,5 +123,6 @@ clean-all: clean
 	@rm -rf external/emulators/yabasanshiro/build 2>/dev/null || true
 	@rm -r external/emulators/flycast/build 2>/dev/null || true
 	@$(MAKE) -C external/emulators/pcsx-rearmed clean || true
-	@rm -r external/emulators/ppsspp/build 2>/dev/null || true
+	@rm -r external/emulators/dolphin/build 2>/dev/null || true
+	@rm -r external/emulators/armsx2/build 2>/dev/null || true
 	$(call MSG_SUCCESS,All clean!)

@@ -140,8 +140,110 @@ apply_all_patches() {
     apply_patches "mupen64plus" "$EMU_DIR/mupen64plus/video-gliden64" "mupen64plus"
     apply_patches "yabasanshiro" "$EMU_DIR/yabasanshiro" "yabasanshiro"
     apply_patches "flycast" "$EMU_DIR/flycast" "flycast"
-    apply_patches "ppsspp" "$EMU_DIR/ppsspp" "ppsspp"
     apply_patches "pcsx-rearmed" "$EMU_DIR/pcsx-rearmed" "pcsx-rearmed"
+    apply_patches "dolphin" "$EMU_DIR/dolphin" "dolphin"
+    apply_patches "armsx2" "$EMU_DIR/armsx2" "armsx2"
+}
+
+build_dolphin() {
+    print_step "Building Dolphin (NoGUI)..."
+
+    local DOLPHIN_DIR="$EMU_DIR/dolphin"
+    local DOLPHIN_BUILD="$DOLPHIN_DIR/build"
+    local DOLPHIN_INSTALL="$EMU_INSTALL/dolphin"
+
+    # VMA header include fixes needed for the Vulkan build under newer GCC
+    grep -q '#include <cstdint>' "$DOLPHIN_DIR/Externals/VulkanMemoryAllocator/include/vk_mem_alloc.h" || \
+        sed -i 's~#include <cstdlib>~#include <cstdlib>\n#include <cstdint>~' \
+            "$DOLPHIN_DIR/Externals/VulkanMemoryAllocator/include/vk_mem_alloc.h"
+    grep -q '#include <string>' "$DOLPHIN_DIR/Externals/VulkanMemoryAllocator/include/vk_mem_alloc.h" || \
+        sed -i 's~#include <cstdint>~#include <cstdint>\n#include <string>~' \
+            "$DOLPHIN_DIR/Externals/VulkanMemoryAllocator/include/vk_mem_alloc.h"
+
+    mkdir -p "$DOLPHIN_BUILD"
+    cd "$DOLPHIN_BUILD"
+
+    # NoGUI-only, fbdev platform (this tree's default: no compositor needed,
+    # EGL/GLES on the framebuffer). SDL3 comes bundled from Externals/SDL.
+    # Vulkan is built in but not the runtime default: the backend has no
+    # VK_KHR_display surface path yet, so fbdev launches use OGL(GLES) until a
+    # display-surface patch lands; then flip GFXBackend = Vulkan in Dolphin.ini.
+    cmake .. \
+        -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TC" -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="$DOLPHIN_INSTALL" \
+        -DENABLE_NOGUI=ON -DENABLE_QT=OFF \
+        -DENABLE_EGL=ON -DENABLE_X11=OFF -DENABLE_WAYLAND=OFF \
+        -DENABLE_VULKAN=ON \
+        -DENABLE_EVDEV=ON -DENABLE_SDL=ON \
+        -DENABLE_ALSA=ON -DENABLE_PULSEAUDIO=OFF \
+        -DENABLE_ANALYTICS=OFF -DENABLE_AUTOUPDATE=OFF \
+        -DENABLE_TESTS=OFF -DENABLE_LLVM=OFF \
+        -DUSE_DISCORD_PRESENCE=OFF -DUSE_RETRO_ACHIEVEMENTS=OFF \
+        -DUSE_MGBA=OFF -DENABLE_CLI_TOOL=OFF \
+        -DENCODE_FRAMEDUMPS=OFF \
+        -DBUILD_SHARED_LIBS=OFF -DLINUX_LOCAL_DEV=OFF
+
+    cmake --build . -j"$JOBS"
+
+    if [ ! -f "$DOLPHIN_BUILD/Binaries/dolphin-emu-nogui" ]; then
+        print_error "Dolphin build failed!"
+        exit 1
+    fi
+
+    "${CROSS_COMPILE}"strip --strip-unneeded "$DOLPHIN_BUILD/Binaries/dolphin-emu-nogui"
+
+    mkdir -p "$DOLPHIN_INSTALL/bin"
+    cp "$DOLPHIN_BUILD/Binaries/dolphin-emu-nogui" "$DOLPHIN_INSTALL/bin/"
+    # Sys resource tree is required at runtime (shipped to /usr/share/dolphin-emu)
+    mkdir -p "$DOLPHIN_INSTALL/sys"
+    cp -r "$DOLPHIN_DIR/Data/Sys"/* "$DOLPHIN_INSTALL/sys/"
+
+    print_step "Dolphin built and installed to $DOLPHIN_INSTALL"
+}
+
+build_armsx2() {
+    print_step "Building ARMSX2 (SDL frontend)..."
+
+    local ARMSX2_DIR="$EMU_DIR/armsx2"
+    local ARMSX2_BUILD="$ARMSX2_DIR/build"
+    local ARMSX2_INSTALL="$EMU_INSTALL/armsx2"
+    local SDL3_INSTALL="$BUILD_DIR/sdl3-install"
+
+    if [ ! -d "$SDL3_INSTALL/usr/lib" ]; then
+        print_error "SDL3 not found at $SDL3_INSTALL - run build-tools.sh first"
+        exit 1
+    fi
+
+    mkdir -p "$ARMSX2_BUILD"
+    cd "$ARMSX2_BUILD"
+
+    # SDL3/kmsdrm frontend: video via Vulkan VK_KHR_display (no compositor),
+    # SDL3 for input/audio, Qt UI fully off.
+    cmake .. \
+        -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TC" -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_PREFIX_PATH="$SDL3_INSTALL/usr" \
+        -DENABLE_SDL_FRONTEND=ON -DENABLE_QT_UI=OFF \
+        -DENABLE_QT_DEBUGGER=OFF \
+        -DUSE_VULKAN=ON -DUSE_OPENGL=ON \
+        -DUSE_BACKTRACE=OFF \
+        -DX11_API=OFF -DWAYLAND_API=OFF \
+        -DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON \
+        -DLTO_PCSX2_CORE=ON
+
+    cmake --build . -j"$JOBS"
+
+    local SDL_BIN=$(find "$ARMSX2_BUILD/bin" -maxdepth 1 -type f -name 'armsx2*' ! -name '*.so' | head -1)
+    if [ -z "$SDL_BIN" ]; then
+        print_error "ARMSX2 build failed!"
+        exit 1
+    fi
+
+    mkdir -p "$ARMSX2_INSTALL/bin"
+    cp "$SDL_BIN" "$ARMSX2_INSTALL/bin/"
+    # Resources (shaders, FullscreenUI assets) are required at runtime
+    cp -r "$ARMSX2_BUILD/bin/resources" "$ARMSX2_INSTALL/"
+
+    print_step "ARMSX2 built and installed to $ARMSX2_INSTALL"
 }
 
 build_yabasanshiro() {
@@ -237,40 +339,6 @@ build_pcsx() {
     print_step "PCSX-ReARMed built and installed to $PCSX_INSTALL"
 }
 
-build_ppsspp() {
-    print_step "Building PPSSPP..."
-
-    local PPSSPP_DIR="$EMU_DIR/ppsspp"
-    local PPSSPP_BUILD="$PPSSPP_DIR/build"
-    local PPSSPP_INSTALL="$EMU_INSTALL/ppsspp"
-
-    mkdir -p "$PPSSPP_BUILD"
-    cd "$PPSSPP_BUILD"
-
-    cmake .. \
-        -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TC" -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX="$PPSSPP_INSTALL" \
-        -DARM64=ON -DUSING_GLES2=ON -DUSE_FFMPEG=ON -DUSE_DISCORD=OFF -DUSE_MINIUPNPC=OFF \
-        -DUSE_SYSTEM_SNAPPY=OFF -DUSE_SYSTEM_FFMPEG=OFF -DUSE_SYSTEM_LIBZIP=OFF \
-        -DUSE_SYSTEM_ZSTD=OFF -DUSE_SYSTEM_MINIUPNPC=OFF -DUSING_QT_UI=OFF \
-        -DUSING_X11_VULKAN=OFF -DUSE_WAYLAND_WSI=OFF -DUSE_VULKAN_DISPLAY_KHR=ON -DHEADLESS=OFF
-
-    cmake --build . -j"$JOBS"
-
-    if [ ! -f "$PPSSPP_BUILD/PPSSPPSDL" ]; then
-        print_error "PPSSPP build failed!"
-        exit 1
-    fi
-
-    "${CROSS_COMPILE}"strip --strip-unneeded "$PPSSPP_BUILD/PPSSPPSDL"
-
-    mkdir -p "$PPSSPP_INSTALL/bin"
-    cp "$PPSSPP_BUILD/PPSSPPSDL" "$PPSSPP_INSTALL/bin/"
-    cp -r "$PPSSPP_DIR/assets" "$PPSSPP_INSTALL/"
-
-    print_step "PPSSPP built and installed to $PPSSPP_INSTALL"
-}
-
 main() {
     echo -e "${GREEN}MIMIKI Emulator Builds${NC}"
     echo ""
@@ -284,7 +352,8 @@ main() {
     build_yabasanshiro
     build_flycast
     build_pcsx
-    build_ppsspp
+    build_dolphin
+    build_armsx2
 
     echo ""
     echo -e "${GREEN}MIMIKI Emulator Builds Complete!${NC}"
@@ -293,8 +362,9 @@ main() {
     echo "  N64:      $EMU_INSTALL/mupen64plus"
     echo "  DC:       $EMU_INSTALL/flycast"
     echo "  PS1:      $EMU_INSTALL/pcsx"
-    echo "  PSP:      $EMU_INSTALL/ppsspp"
     echo "  Saturn:   $EMU_INSTALL/yabasanshiro"
+    echo "  GC/Wii:   $EMU_INSTALL/dolphin"
+    echo "  PS2:      $EMU_INSTALL/armsx2"
 }
 
 main "$@"

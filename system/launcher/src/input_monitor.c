@@ -13,10 +13,22 @@ static struct timespec power_press_time = {0};
 static struct timespec last_wake_time = {0};
 static bool power_button_held = false;
 static bool mode_button_held = false;
-static bool headphones_inserted = false;
 
 // Brightness: 4-100% in 7 steps of 16, default to ~50%
 static int current_brightness = 52;
+
+// Volume: sc2730 HP gain pair, hardware range 0-15, rcS boots it at 8
+static int current_volume = 8;
+
+static void set_hp_volume(int vol)
+{
+    char cmd[160];
+    snprintf(cmd, sizeof(cmd),
+             "amixer -q -c 0 cset name='HPL Gain HPL Playback Volume' %d;"
+             "amixer -q -c 0 cset name='HPR Gain HPR Playback Volume' %d",
+             vol, vol);
+    system(cmd);
+}
 
 static int find_device_by_name(const char *device_name)
 {
@@ -55,13 +67,11 @@ bool input_monitor_init(void)
 {
     num_devices = 0;
     const char *device_names[] = {
-        "joypad",    // Mode + D-pad + face buttons
-        "pwrkey",    // Power
-        "gpio-keys", // Volume + Lid
-        "rk817_ext", // Headphones
+        "MIMIKI Gamepad",  // Aggregated pad (raw gamepad_keys is grabbed by mimiki-inputd)
+        "gpio-keys-system", // Power + Volume + Hall swivel
     };
 
-    for (int i = 0; i < MAX_INPUT_DEVICES; i++)
+    for (int i = 0; i < (int)(sizeof(device_names) / sizeof(device_names[0])); i++)
     {
         int fd = find_device_by_name(device_names[i]);
         if (fd >= 0 && num_devices < MAX_INPUT_DEVICES)
@@ -138,13 +148,14 @@ void input_monitor_poll(InputEvents *events)
                         char cmd[128];
                         snprintf(cmd, sizeof(cmd),
                                  "echo %d > /sys/class/backlight/backlight/brightness",
-                                 (int)(current_brightness * 255 / 100));
+                                 (int)(current_brightness * 4095 / 100));
                         system(cmd);
                     }
                 }
                 else
                 {
-                    system("amixer -q -c 0 sset 'Master' 5%+");
+                    if (current_volume < 15)
+                        set_hp_volume(++current_volume);
                 }
                 break;
 
@@ -159,13 +170,14 @@ void input_monitor_poll(InputEvents *events)
                         char cmd[128];
                         snprintf(cmd, sizeof(cmd),
                                  "echo %d > /sys/class/backlight/backlight/brightness",
-                                 (int)(current_brightness * 255 / 100));
+                                 (int)(current_brightness * 4095 / 100));
                         system(cmd);
                     }
                 }
                 else
                 {
-                    system("amixer -q -c 0 sset 'Master' 5%-");
+                    if (current_volume > 0)
+                        set_hp_volume(--current_volume);
                 }
                 break;
 
@@ -179,19 +191,6 @@ void input_monitor_poll(InputEvents *events)
                 {
                     system("echo mem > /sys/power/state");
                     clock_gettime(CLOCK_MONOTONIC, &last_wake_time);
-                }
-                break;
-
-            case SW_HEADPHONE_INSERT:
-                if (ev.value == 0 && headphones_inserted)
-                {
-                    system("amixer -q -c 0 cset name='Playback Mux' SPK");
-                    headphones_inserted = false;
-                }
-                else if (ev.value == 1 && !headphones_inserted)
-                {
-                    system("amixer -q -c 0 cset name='Playback Mux' HP");
-                    headphones_inserted = true;
                 }
                 break;
 

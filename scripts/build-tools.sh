@@ -16,6 +16,7 @@ TOOLS_DIR="$REPO_ROOT/external/tools"
 CONFIG_DIR="$REPO_ROOT/system/config"
 SDL2_INSTALL="$BUILD_DIR/sdl2-install"
 SDL12_INSTALL="$BUILD_DIR/sdl12-install"
+SDL3_INSTALL="$BUILD_DIR/sdl3-install"
 
 # Build configuration
 CROSS_COMPILE=aarch64-linux-gnu-
@@ -217,6 +218,37 @@ configure_tool() {
                 -DSDL2_INCLUDE_DIR="$SDL2_INSTALL/usr/include/SDL2" \
                 -DSDL2_LIBRARY="$SDL2_INSTALL/usr/lib/libSDL2.so"
             ;;
+
+        SDL3)
+            # Needed by ARMSX2's pcsx2-sdl frontend (input/audio; video is
+            # Vulkan VK_KHR_display). Same slim profile as the SDL2 build.
+            mkdir -p "$build_dir"
+            cd "$build_dir"
+
+            cmake "$tool_dir" \
+                -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TC" \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX=/usr \
+                -DSDL_SHARED=ON \
+                -DSDL_STATIC=OFF \
+                -DSDL_TEST_LIBRARY=OFF \
+                -DSDL_EXAMPLES=OFF \
+                -DSDL_KMSDRM=ON \
+                -DSDL_VULKAN=ON \
+                -DSDL_OPENGLES=ON \
+                -DSDL_OPENGL=OFF \
+                -DSDL_X11=OFF \
+                -DSDL_WAYLAND=OFF \
+                -DSDL_ALSA=ON \
+                -DSDL_PULSEAUDIO=OFF \
+                -DSDL_PIPEWIRE=OFF \
+                -DSDL_JACK=OFF \
+                -DSDL_SNDIO=OFF \
+                -DSDL_DBUS=OFF \
+                -DSDL_IBUS=OFF \
+                -DSDL_CAMERA=OFF \
+                -DSDL_HIDAPI=ON
+            ;;
     esac
 
     print_step "$tool configured!"
@@ -250,7 +282,7 @@ build_tool() {
             make -j"$(nproc)"
             ;;
 
-        sdl12-compat)
+        sdl12-compat | SDL3)
             cd "$build_dir"
             cmake --build . -j"$(nproc)"
             ;;
@@ -277,6 +309,15 @@ install_SDL2_image() {
     make DESTDIR="$SDL2_INSTALL" install
 
     print_step "SDL2_image installed to $SDL2_INSTALL!"
+}
+
+install_SDL3() {
+    print_step "Installing SDL3 to staging directory..."
+
+    cd "$TOOLS_DIR/SDL3/build"
+    DESTDIR="$SDL3_INSTALL" cmake --install . --prefix /usr
+
+    print_step "SDL3 installed to $SDL3_INSTALL!"
 }
 
 install_sdl12_compat() {
@@ -311,6 +352,11 @@ build_all_tools() {
     configure_tool "sdl12-compat"
     build_tool "sdl12-compat"
     install_sdl12_compat
+
+    # SDL3 (independent of the SDL2 stack; used by ARMSX2)
+    configure_tool "SDL3"
+    build_tool "SDL3"
+    install_SDL3
 }
 
 main() {

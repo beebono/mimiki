@@ -4,27 +4,40 @@
 echo 0 > /sys/class/graphics/fbcon/cursor_blink
 echo -en "\033]P1E60000\033]P200E600\033]P7E6E6E6" > /dev/tty0
 
-amixer -q -c 0 sset 'Master' unmute 70%
-amixer -q -c 0 cset name='Playback Mux' SPK
+# Audio DSP: boots the AGDSP with /lib/firmware/agdsp.bin; the built-in VBC
+# ASoC stack defer-probes until this is up
+insmod /lib/modules/sprd-audcp-boot.ko 2>/dev/null
 
-if [ -b "/dev/mmcblk2p1" ]; then
-    mount /dev/mmcblk2p1 /mnt/games2
-    if [ -d "/mnt/games2/" ] && [ ! -e "/mnt/games/data/.migrated" ]; then
-        # Copy bios for user convenience in case they want to use the second card for all game files.
-        if [ -d "/mnt/games2/data" ]; then
-            cp -r /mnt/games2/data/* /mnt/games/data/
-        fi
-        # Also check for the RA version directories. Convenience!
-        if [ -d "/mnt/games2/bios" ]; then
-            cp -r /mnt/games2/bios/* /mnt/games/data/
-            if [ -d "/mnt/games/bios/dc" ]; then
-                mv /mnt/games/bios/dc/* /mnt/games/data/
-                rmdir /mnt/games/bios/dc/
-            fi
-        fi
-        touch /mnt/games/data/.migrated
-    fi
+# GPU: load the Mali kbase module (libmali blob is its userspace half)
+insmod /lib/modules/mali_kbase.ko 2>/dev/null
+
+# Input: merge gamepad + rumble into the "MIMIKI Gamepad" virtual device
+/usr/bin/mimiki-inputd &
+
+# Audio bring-up, transcribed from ROCKNIX's sprdphone-sc2730 UCM BootSequence.
+# The card defer-probes until sprd-audcp-boot (above) brings the AGDSP up, so
+# wait for the control device before poking it. 'DSP VBC Profile Select' is the
+# load-bearing AGDSP profile selector - silent at its default.
+# Speaker is the codec HP path into the external AW87390 amp, not the SPK pin.
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    [ -e /dev/snd/controlC0 ] && break
+    sleep 0.5
+done
+if [ -e /dev/snd/controlC0 ]; then
+    amixer -q -c 0 cset name='HP mix mode' 0
+    amixer -q -c 0 cset name='HPL EAR Sel' HPL
+    amixer -q -c 0 cset name='DSP VBC Profile Select' 961216512
+    amixer -q -c 0 cset name='VBC DAC0 DG Set' 63,63
+    amixer -q -c 0 cset name='HPL Gain HPL Playback Volume' 8
+    amixer -q -c 0 cset name='HPR Gain HPR Playback Volume' 8
+    amixer -q -c 0 cset name='VBC_MIXER0_DAC0' HALF_ADD
+    amixer -q -c 0 cset name='DAC LRCLK Select' invert
+    amixer -q -c 0 cset name='agdsp_access_en' on
+    amixer -q -c 0 cset name='S_NORMAL_AP01_P_CODEC SWITCH' on
+    amixer -q -c 0 cset name='VBC_DAC0_DP_EN' enable
+    amixer -q -c 0 cset name='HPL Mixer DACLHPL Switch' on
+    amixer -q -c 0 cset name='HPR Mixer DACRHPR Switch' on
+    amixer -q -c 0 cset name='Speaker Function' on
+    amixer -q -c 0 cset name='Speaker1 Function' on
+    amixer -q -c 0 cset name='VBC DAC0 AUD MDG Set' 1,1024
 fi
-
-cp /root/.ppsspp/ppsspp.ini /mnt/games/data/ppsspp/PSP/SYSTEM/
-cp /root/.ppsspp/controls.ini /mnt/games/data/ppsspp/PSP/SYSTEM/

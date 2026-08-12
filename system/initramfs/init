@@ -3,9 +3,11 @@
 
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin
 
-DEVICE="/dev/mmcblk1"
-ROOT_DEVICE="${DEVICE}p4"
-PART_DEVICE="${DEVICE}p5"
+# RG Rotate: SD card is mmc0 (ums512.dtsi: mmc0 = &sdio0; eMMC is mmc3)
+# Layout: p1 uboot (raw DHTB), p2 boot FAT, p3 rootfs squashfs, p4 games
+DEVICE="/dev/mmcblk0"
+ROOT_DEVICE="${DEVICE}p3"
+PART_DEVICE="${DEVICE}p4"
 
 switch_to_mimiki() {
     mount "$ROOT_DEVICE" /newroot
@@ -40,11 +42,6 @@ mount -t devpts devpts /dev/pts
 [ -e /dev/zero ] || mknod -m 666 /dev/zero c 1 5
 [ -e /dev/console ] || mknod -m 600 /dev/console c 5 1
 
-if grep -q boot_reason=charger /proc/cmdline; then
-    echo 0 > /sys/class/graphics/fbcon/cursor_blink
-    /sbin/charge-monitor
-fi
-
 DEV_CHECKS=0
 while [ ! -b "$DEVICE" ]; do
     DEV_CHECKS=$((DEV_CHECKS + 1))
@@ -64,7 +61,7 @@ fi
 # Extend table
 sgdisk -e "$DEVICE"
 # Create maximum new partition 5
-sgdisk -N 5 "$DEVICE"
+sgdisk -N 4 "$DEVICE"
 
 # Let the device settle
 sleep 0.2

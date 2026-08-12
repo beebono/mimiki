@@ -1,0 +1,160 @@
+diff --git a/Source/Core/VideoBackends/Vulkan/VKSwapChain.cpp b/Source/Core/VideoBackends/Vulkan/VKSwapChain.cpp
+index 370e22d15c..144ce2f284 100644
+--- a/Source/Core/VideoBackends/Vulkan/VKSwapChain.cpp
++++ b/Source/Core/VideoBackends/Vulkan/VKSwapChain.cpp
+@@ -5,6 +5,7 @@
+ 
+ #include <algorithm>
+ #include <cstdint>
++#include <vector>
+ 
+ #include "Common/Assert.h"
+ #include "Common/Contains.h"
+@@ -106,6 +107,114 @@ VkSurfaceKHR SwapChain::CreateVulkanSurface(VkInstance instance, const WindowSys
+   }
+ #endif
+ 
++  // FBDev: no windowing system, so take the display directly via VK_KHR_display.
++  // Modeled on the ARMSX2 pcsx2-sdl frontend's VulkanDirect path: enumerate
++  // displays from the physical device, use the native (preferred) mode, find a
++  // plane that supports the display, and create a display-plane surface.
++  if (wsi.type == WindowSystemType::FBDev)
++  {
++    if (!vkGetPhysicalDeviceDisplayPropertiesKHR || !vkCreateDisplayPlaneSurfaceKHR)
++    {
++      ERROR_LOG_FMT(VIDEO, "VK_KHR_display entry points not available.");
++      return VK_NULL_HANDLE;
++    }
++
++    u32 gpu_count = 0;
++    VkResult res = vkEnumeratePhysicalDevices(instance, &gpu_count, nullptr);
++    if (res != VK_SUCCESS || gpu_count == 0)
++    {
++      LOG_VULKAN_ERROR(res, "vkEnumeratePhysicalDevices failed: ");
++      return VK_NULL_HANDLE;
++    }
++    std::vector<VkPhysicalDevice> gpus(gpu_count);
++    vkEnumeratePhysicalDevices(instance, &gpu_count, gpus.data());
++    const VkPhysicalDevice physical_device = gpus[0];
++
++    u32 display_count = 0;
++    res = vkGetPhysicalDeviceDisplayPropertiesKHR(physical_device, &display_count, nullptr);
++    if (res != VK_SUCCESS || display_count == 0)
++    {
++      LOG_VULKAN_ERROR(res, "vkGetPhysicalDeviceDisplayPropertiesKHR failed: ");
++      return VK_NULL_HANDLE;
++    }
++    std::vector<VkDisplayPropertiesKHR> displays(display_count);
++    vkGetPhysicalDeviceDisplayPropertiesKHR(physical_device, &display_count, displays.data());
++    const VkDisplayKHR display = displays[0].display;
++
++    u32 mode_count = 0;
++    res = vkGetDisplayModePropertiesKHR(physical_device, display, &mode_count, nullptr);
++    if (res != VK_SUCCESS || mode_count == 0)
++    {
++      LOG_VULKAN_ERROR(res, "vkGetDisplayModePropertiesKHR failed: ");
++      return VK_NULL_HANDLE;
++    }
++    std::vector<VkDisplayModePropertiesKHR> modes(mode_count);
++    vkGetDisplayModePropertiesKHR(physical_device, display, &mode_count, modes.data());
++    // Index 0 is the display's preferred (native) mode per spec.
++    const VkDisplayModePropertiesKHR& mode = modes[0];
++
++    u32 plane_count = 0;
++    res = vkGetPhysicalDeviceDisplayPlanePropertiesKHR(physical_device, &plane_count, nullptr);
++    if (res != VK_SUCCESS || plane_count == 0)
++    {
++      LOG_VULKAN_ERROR(res, "vkGetPhysicalDeviceDisplayPlanePropertiesKHR failed: ");
++      return VK_NULL_HANDLE;
++    }
++    std::vector<VkDisplayPlanePropertiesKHR> planes(plane_count);
++    vkGetPhysicalDeviceDisplayPlanePropertiesKHR(physical_device, &plane_count, planes.data());
++
++    u32 plane_index = plane_count;
++    u32 plane_stack_index = 0;
++    for (u32 i = 0; i < plane_count; i++)
++    {
++      // A plane bound to another display can't be used.
++      if (planes[i].currentDisplay != VK_NULL_HANDLE && planes[i].currentDisplay != display)
++        continue;
++
++      u32 supported_count = 0;
++      res = vkGetDisplayPlaneSupportedDisplaysKHR(physical_device, i, &supported_count, nullptr);
++      if (res != VK_SUCCESS || supported_count == 0)
++        continue;
++      std::vector<VkDisplayKHR> supported(supported_count);
++      vkGetDisplayPlaneSupportedDisplaysKHR(physical_device, i, &supported_count,
++                                            supported.data());
++      if (std::find(supported.begin(), supported.end(), display) != supported.end())
++      {
++        plane_index = i;
++        plane_stack_index = planes[i].currentStackIndex;
++        break;
++      }
++    }
++    if (plane_index == plane_count)
++    {
++      ERROR_LOG_FMT(VIDEO, "VK_KHR_display: no plane supports the display.");
++      return VK_NULL_HANDLE;
++    }
++
++    VkDisplaySurfaceCreateInfoKHR surface_create_info = {
++        VK_STRUCTURE_TYPE_DISPLAY_SURFACE_CREATE_INFO_KHR,  // VkStructureType sType
++        nullptr,                                            // const void* pNext
++        0,                                                  // VkDisplaySurfaceCreateFlagsKHR flags
++        mode.displayMode,                                   // VkDisplayModeKHR displayMode
++        plane_index,                                        // uint32_t planeIndex
++        plane_stack_index,                                  // uint32_t planeStackIndex
++        VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,              // VkSurfaceTransformFlagBitsKHR
++        1.0f,                                               // float globalAlpha
++        VK_DISPLAY_PLANE_ALPHA_OPAQUE_BIT_KHR,              // VkDisplayPlaneAlphaFlagBitsKHR
++        mode.parameters.visibleRegion                       // VkExtent2D imageExtent
++    };
++
++    VkSurfaceKHR surface;
++    res = vkCreateDisplayPlaneSurfaceKHR(instance, &surface_create_info, nullptr, &surface);
++    if (res != VK_SUCCESS)
++    {
++      LOG_VULKAN_ERROR(res, "vkCreateDisplayPlaneSurfaceKHR failed: ");
++      return VK_NULL_HANDLE;
++    }
++
++    return surface;
++  }
++
+ #if defined(VK_USE_PLATFORM_METAL_EXT)
+   if (wsi.type == WindowSystemType::MacOS)
+   {
+diff --git a/Source/Core/VideoBackends/Vulkan/VulkanContext.cpp b/Source/Core/VideoBackends/Vulkan/VulkanContext.cpp
+index d388300b6e..7fd5bd8d49 100644
+--- a/Source/Core/VideoBackends/Vulkan/VulkanContext.cpp
++++ b/Source/Core/VideoBackends/Vulkan/VulkanContext.cpp
+@@ -375,6 +375,11 @@ bool VulkanContext::SelectInstanceExtensions(std::vector<const char*>* extension
+     return false;
+   }
+ #endif
++  // FBDev has no windowing system: present direct-to-display via VK_KHR_display.
++  if (wstype == WindowSystemType::FBDev && !AddExtension(VK_KHR_DISPLAY_EXTENSION_NAME, true))
++  {
++    return false;
++  }
+ 
+   AddExtension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME, false);
+   if (wstype != WindowSystemType::Headless)
+diff --git a/Source/Core/VideoBackends/Vulkan/VulkanEntryPoints.inl b/Source/Core/VideoBackends/Vulkan/VulkanEntryPoints.inl
+index d716ce49d2..4038175282 100644
+--- a/Source/Core/VideoBackends/Vulkan/VulkanEntryPoints.inl
++++ b/Source/Core/VideoBackends/Vulkan/VulkanEntryPoints.inl
+@@ -37,6 +37,12 @@ VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceSurfaceSupportKHR, false)
+ VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceSurfaceCapabilitiesKHR, false)
+ VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceSurfaceFormatsKHR, false)
+ VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceSurfacePresentModesKHR, false)
++VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceDisplayPropertiesKHR, false)
++VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceDisplayPlanePropertiesKHR, false)
++VULKAN_INSTANCE_ENTRY_POINT(vkGetDisplayPlaneSupportedDisplaysKHR, false)
++VULKAN_INSTANCE_ENTRY_POINT(vkGetDisplayModePropertiesKHR, false)
++VULKAN_INSTANCE_ENTRY_POINT(vkGetDisplayPlaneCapabilitiesKHR, false)
++VULKAN_INSTANCE_ENTRY_POINT(vkCreateDisplayPlaneSurfaceKHR, false)
+ VULKAN_INSTANCE_ENTRY_POINT(vkGetPhysicalDeviceMemoryProperties2, false)
+ 
+ #if defined(VK_USE_PLATFORM_WIN32_KHR)

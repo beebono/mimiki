@@ -1,5 +1,5 @@
 #!/bin/bash
-# MIMIKI - SD Card Image Creation Script
+# MIMIKI - SD Card Image Creation Script (RG Rotate / Unisoc UMS512 T618)
 set -e
 
 # Colors
@@ -15,11 +15,15 @@ BOOTLOADER_DIR="$BUILD_DIR/boot"
 ROOTFS_SQUASHFS="$BUILD_DIR/rootfs.squashfs"
 OUTPUT_DIR="$BUILD_DIR/images"
 
+DTB_NAME="ums512-rg-rotate"
+
 # Root size auto calculation (round up to next MiB)
 ROOTFS_SIZE=$(stat -c%s "$ROOTFS_SQUASHFS")
 
 # Partition sizes (in MB)
-RESERVE_SIZE_MB=8
+# The SPL finds U-Boot by scanning the SD card's GPT for a partition literally
+# named "uboot" (checked before the eMMC uboot_a/b slots, so it wins over the
+# stock u-boot). The DHTB payload is capped at 1MiB but keep some headroom.
 UBOOT_SIZE_MB=8
 BOOT_SIZE_MB=32
 ROOT_SIZE_MB=$(( (ROOTFS_SIZE + 1048575) / 1048576 ))
@@ -28,7 +32,7 @@ if [ $ROOT_SIZE_MB -lt 32 ]; then
 fi
 
 # Total Size (partition table padding at end)
-IMAGE_SIZE_MB=$((RESERVE_SIZE_MB + UBOOT_SIZE_MB + BOOT_SIZE_MB + ROOT_SIZE_MB + 2))
+IMAGE_SIZE_MB=$((1 + UBOOT_SIZE_MB + BOOT_SIZE_MB + ROOT_SIZE_MB + 2))
 
 print_step() {
     echo -e "${GREEN}==>${NC} $1" >&2
@@ -62,19 +66,19 @@ check_prerequisites() {
         exit 1
     fi
 
-    if [ ! -f "$BOOTLOADER_DIR/idbloader.img" ] || [ ! -f "$BOOTLOADER_DIR/u-boot.itb" ]; then
-        print_error "Bootloader binaries not found! Run 'make uboot' first"
-        print_error "Expected: $BOOTLOADER_DIR/idbloader.img and $BOOTLOADER_DIR/u-boot.itb"
+    if [ ! -f "$BOOTLOADER_DIR/uboot.bin" ]; then
+        print_error "Bootloader binary not found! Run 'make boot' first"
+        print_error "Expected: $BOOTLOADER_DIR/uboot.bin"
         exit 1
     fi
 
     if [ ! -f "$BUILD_DIR/boot/Image" ]; then
-        print_error "Kernel not found! Run 'make kernel' first"
+        print_error "Kernel not found! Run 'make boot' first"
         exit 1
     fi
 
-    if [ ! -f "$BUILD_DIR/boot/rk3566-miyoo-flip.dtb" ]; then
-        print_error "Device tree not found! Run 'make kernel' first"
+    if [ ! -f "$BUILD_DIR/boot/${DTB_NAME}.dtb" ]; then
+        print_error "Device tree not found! Run 'make boot' first"
         exit 1
     fi
 
@@ -100,42 +104,26 @@ create_image_file() {
 create_partitions() {
     local image_path="$1"
 
-    # Auto calculate partition boundaries (but always manually align reserved, uboot, and boot)
-    local uboot_start=8
+    # 1MiB alignment gap up front for the primary GPT
+    local uboot_start=1
     local uboot_end=$((uboot_start + UBOOT_SIZE_MB))
-    local boot_start=16
+    local boot_start=$uboot_end
     local boot_end=$((boot_start + BOOT_SIZE_MB))
     local root_start=$boot_end
     local root_end=$((root_start + ROOT_SIZE_MB))
 
     print_step "Creating partition table..."
     parted -s "$image_path" mklabel gpt
-    print_step "Creating TPL/SPL reserved partition (${RESERVE_SIZE_MB}MB, GPT name 'reserved')..."
-    parted -s "$image_path" mkpart reserved 34s ${RESERVE_SIZE_MB}MiB
     print_step "Creating uboot partition (${UBOOT_SIZE_MB}MB, GPT name 'uboot')..."
     parted -s "$image_path" mkpart uboot ${uboot_start}MiB ${uboot_end}MiB
     print_step "Creating boot partition (${BOOT_SIZE_MB}MB, GPT name 'vfat')..."
     parted -s "$image_path" mkpart vfat fat32 ${boot_start}MiB ${boot_end}MiB
     print_step "Setting ESP flag on boot partition for U-Boot detection..."
-    parted -s "$image_path" set 3 esp on
+    parted -s "$image_path" set 2 esp on
     print_step "Creating root partition (${ROOT_SIZE_MB}MB, GPT name 'rootfs')..."
     parted -s "$image_path" mkpart rootfs ${root_start}MiB ${root_end}MiB
     sync
     parted -s "$image_path" print
-}
-
-# DO NOT write this by using the reserved partition, it MUST be at sector 64
-write_bootloader() {
-    local image_path="$1"
-
-    print_step "Writing idbloader.img at sector 64 (32KB)..."
-    dd if="$BOOTLOADER_DIR/idbloader.img" \
-       of="$image_path" \
-       seek=64 \
-       conv=notrunc \
-       status=none
-
-    print_step "idbloader written successfully!"
 }
 
 setup_loop_device() {
@@ -159,16 +147,16 @@ setup_loop_device() {
 write_uboot_to_partition() {
     local loop_dev="$1"
 
-    print_step "Writing u-boot.itb to uboot partition (raw)..."
+    print_step "Writing uboot.bin to uboot partition (raw)..."
 
-    # GammaLoader chainload looks for GPT partition named "uboot" with raw FIT image
-    dd if="$BOOTLOADER_DIR/u-boot.itb" \
-       of="${loop_dev}p2" \
+    # The SPL loads the DHTB-wrapped U-Boot from the GPT partition named "uboot"
+    dd if="$BOOTLOADER_DIR/uboot.bin" \
+       of="${loop_dev}p1" \
        bs=4M \
        conv=fsync \
        status=none
 
-    print_step "u-boot.itb written to uboot partition!"
+    print_step "uboot.bin written to uboot partition!"
 }
 
 format_boot_partition() {
@@ -177,9 +165,9 @@ format_boot_partition() {
     print_step "Formatting boot partition..."
 
     # Calculate partition size in 1KB blocks for mkfs.vfat
-    local part_size_bytes=$(blockdev --getsize64 "${loop_dev}p3")
+    local part_size_bytes=$(blockdev --getsize64 "${loop_dev}p2")
     local part_size_kb=$((part_size_bytes / 1024))
-    mkfs.vfat -F 32 -n MIMIKI "${loop_dev}p3" $part_size_kb
+    mkfs.vfat -F 32 -n MIMIKI "${loop_dev}p2" $part_size_kb
 
     print_step "Boot partition formatted successfully!"
 }
@@ -190,21 +178,19 @@ populate_boot_partition() {
     print_step "Populating boot partition..."
 
     local mount_point=$(mktemp -d)
-    mount "${loop_dev}p3" "$mount_point"
+    mount "${loop_dev}p2" "$mount_point"
 
     ls -lh "$BUILD_DIR/boot/Image"
     cp "$BUILD_DIR/boot/Image" "$mount_point/"
-    cp "$BUILD_DIR/boot/rk3566-miyoo-flip.dtb" "$mount_point/"
-    cp "$BUILD_DIR/dt-overlays"/* "$mount_point/"
+    cp "$BUILD_DIR/boot/${DTB_NAME}.dtb" "$mount_point/"
 
     print_step "Creating EXTLINUX boot configuration..."
     mkdir -p "$mount_point/extlinux"
-    cat > "$mount_point/extlinux/extlinux.conf" <<'EOF'
+    cat > "$mount_point/extlinux/extlinux.conf" <<EOF
 LABEL MIMIKI
   KERNEL /Image
-  FDT /rk3566-miyoo-flip.dtb
-  FDTOVERLAYS /rk3566-undervolt-cpu-l3.dtbo
-  APPEND rootwait quiet loglevel=0 fbcon=font:TER16x32 ${boot_reason}
+  FDT /${DTB_NAME}.dtb
+  APPEND rootwait quiet loglevel=0 fbcon=font:TER16x32
 EOF
 
     sync
@@ -219,7 +205,7 @@ write_squashfs_to_partition() {
 
     print_step "Writing rootfs.squashfs to rootfs partition (raw)..."
     dd if="$ROOTFS_SQUASHFS" \
-       of="${loop_dev}p4" \
+       of="${loop_dev}p3" \
        bs=4M \
        conv=fsync \
        status=none
@@ -239,7 +225,6 @@ main() {
     local image_path=$(create_image_file)
     print_step "Image file: $image_path"
     create_partitions "$image_path"
-    write_bootloader "$image_path"
     local loop_dev=$(setup_loop_device "$image_path")
     print_step "Loop device: $loop_dev"
     write_uboot_to_partition "$loop_dev"

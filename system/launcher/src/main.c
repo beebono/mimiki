@@ -7,20 +7,20 @@
 
 #include "shared.h"
 
-// Layout using TER16x32
+// Layout using TER16x32 on the 720x720 panel (45 cols x 22 rows)
 #define MARGIN       1
-#define USABLE_COLS  38
-#define USABLE_ROWS  13
+#define USABLE_COLS  43
+#define USABLE_ROWS  20
 #define HEADER_ROW   MARGIN
 #define FOOTER_ROW   (MARGIN + USABLE_ROWS)
 #define CONTENT_ROW  (HEADER_ROW + 2)
 #define BATTERY_COL  (MARGIN + USABLE_COLS - 7)
 
 // Menu
-#define MAX_SYSTEMS 5
+#define MAX_SYSTEMS 6
 #define MAX_GAMES 256
-#define GAMES_PER_PAGE 10
-#define GAME_NAME_MAX_CHARS 32
+#define GAMES_PER_PAGE 16
+#define GAME_NAME_MAX_CHARS 38
 #define BATTERY_READ_MS 1750
 
 typedef struct
@@ -54,14 +54,16 @@ static const char *n64_exts[] = {".z64", ".n64", ".v64", NULL};
 static const char *stn_exts[] = {".chd", ".iso", ".cue", NULL};
 static const char *dc_exts[] = {".gdi", ".cdi", ".chd", NULL};
 static const char *ps1_exts[] = {".cue", ".chd", ".pbp", NULL};
-static const char *psp_exts[] = {".iso", ".cso", ".chd", NULL};
+static const char *gc_exts[] = {".rvz", ".iso", ".gcz", NULL};
+static const char *ps2_exts[] = {".iso", ".chd", ".cso", NULL};
 
 static System systems[MAX_SYSTEMS] = {
     {"Nintendo 64", "n64", "mupen64plus", n64_exts, {}, 0},
     {"Saturn", "stn", "yabasanshiro", stn_exts, {}, 0},
     {"Dreamcast", "dc", "flycast", dc_exts, {}, 0},
     {"PlayStation", "ps1", "pcsx", ps1_exts, {}, 0},
-    {"PS Portable", "psp", "PPSSPPSDL", psp_exts, {}, 0}};
+    {"GameCube", "gc", "dolphin-emu-nogui", gc_exts, {}, 0},
+    {"PlayStation 2", "ps2", "armsx2-sdl", ps2_exts, {}, 0}};
 
 enum {
     PAIR_DEFAULT = 1,
@@ -97,7 +99,7 @@ static bool has_extension(const char *filename, const char **extensions)
 static void set_cpu_governor(const char *cpu_gov)
 {
     if (cpu_gov) {
-        for (int cpu = 0; cpu < 4; cpu++) {
+        for (int cpu = 0; cpu < 8; cpu++) {
             char path[256];
             snprintf(path, sizeof(path),
                 "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_governor", cpu);
@@ -117,7 +119,7 @@ static void set_gpu_governor(const char *gpu_gov)
 {
     if (gpu_gov)
     {
-        const char *gpu_path = "/sys/class/devfreq/fde60000.gpu/governor";
+        const char *gpu_path = "/sys/class/devfreq/60000000.gpu/governor";
         FILE *fp = fopen(gpu_path, "w");
         if (fp)
         {
@@ -141,9 +143,9 @@ static void scan_games(System *sys)
     struct dirent *entry;
     sys->game_count = 0;
 
-    const char *base_dirs[] = {"/mnt/games", "/mnt/games2"};
+    const char *base_dirs[] = {"/mnt/games"};
 
-    for (int d = 0; d < 2; d++)
+    for (int d = 0; d < 1; d++)
     {
         char rom_dir[32];
         snprintf(rom_dir, sizeof(rom_dir), "%s/%s", base_dirs[d], sys->short_name);
@@ -225,14 +227,14 @@ static bool read_battery(void)
     int old_capacity = battery_capacity;
     bool old_charging = battery_charging;
 
-    FILE *fp = fopen("/sys/class/power_supply/rk817-battery/capacity", "r");
+    FILE *fp = fopen("/sys/class/power_supply/sc27xx-fgu/capacity", "r");
     if (fp) {
         if (fscanf(fp, "%d", &battery_capacity) != 1)
             battery_capacity = -1;
         fclose(fp);
     }
 
-    fp = fopen("/sys/class/power_supply/rk817-battery/status", "r");
+    fp = fopen("/sys/class/power_supply/sc27xx-fgu/status", "r");
     if (fp) {
         char status[32] = {0};
         fgets(status, sizeof(status), fp);
@@ -413,6 +415,14 @@ static void launch_game(System *sys, Game *game)
     if (strcmp(sys->short_name, "stn") == 0)
         cpu_gov = "performance";
 
+    // The heavy systems get everything
+    if ((strcmp(sys->short_name, "gc") == 0) ||
+        (strcmp(sys->short_name, "ps2") == 0))
+    {
+        cpu_gov = "performance";
+        gpu_gov = "performance";
+    }
+
     set_cpu_governor(cpu_gov);
     set_gpu_governor(gpu_gov);
 
@@ -446,10 +456,15 @@ static void launch_game(System *sys, Game *game)
         {
             execl("/usr/bin/pcsx", sys->emulator, "-cdfile", game->path, (char *)NULL);
         }
-        else if (strcmp(sys->short_name, "psp") == 0)
+        else if (strcmp(sys->short_name, "gc") == 0)
+        {
+            execl("/usr/bin/dolphin-emu-nogui", sys->emulator,
+                "-u", "/mnt/games/data/dolphin", "-e", game->path, (char *)NULL);
+        }
+        else if (strcmp(sys->short_name, "ps2") == 0)
         {
             setenv("XDG_CONFIG_HOME", "/mnt/games/data", 1);
-            execl("/usr/bin/PPSSPPSDL", sys->emulator, game->path, (char *)NULL);
+            execl("/usr/bin/armsx2-sdl", sys->emulator, game->path, (char *)NULL);
         }
 
         _exit(1);

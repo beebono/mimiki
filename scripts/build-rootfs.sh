@@ -77,6 +77,11 @@ populate_rootfs() {
 install_launcher() {
     print_step "Installing Launcher..."
 
+    if [ -f "$REPO_ROOT/system/aggregator/build/mimiki-inputd" ]; then
+        cp "$REPO_ROOT/system/aggregator/build/mimiki-inputd" "$ROOTFS_BUILD/usr/bin/"
+        chmod +x "$ROOTFS_BUILD/usr/bin/mimiki-inputd"
+    fi
+
     if [ -f "$REPO_ROOT/system/launcher/build/mimiki-launcher" ]; then
         cp "$REPO_ROOT/system/launcher/build/mimiki-launcher" "$ROOTFS_BUILD/usr/bin/"
         chmod +x "$ROOTFS_BUILD/usr/bin/mimiki-launcher"
@@ -149,6 +154,15 @@ install_libraries() {
     cp -a "$REPO_ROOT/system/prebuilts/libmali-blobs"/icd.d/*.json "$ROOTFS_BUILD/usr/share/vulkan/icd.d/" || print_warning "Vulkan icd not found"
     cp -a "$SYSROOT"/libdrm.so* "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libdrm not found"
 
+    # Kernel modules loaded by rcS: mali_kbase (libmali is its userspace half)
+    # and sprd-audcp-boot (audio DSP boot, firmware in the squashfs)
+    mkdir -p "$ROOTFS_BUILD/lib/modules"
+    cp -a "$BUILD_DIR/modules"/*.ko "$ROOTFS_BUILD/lib/modules/" 2>/dev/null || print_warning "Kernel modules not found (run 'make boot' first)"
+
+    # Firmware (AGDSP audio DSP; also in the initramfs for early probe)
+    mkdir -p "$ROOTFS_BUILD/lib/firmware"
+    cp -a "$REPO_ROOT/system/prebuilts/firmware"/* "$ROOTFS_BUILD/lib/firmware/" 2>/dev/null || print_warning "Firmware blobs not found"
+
     # Additional libraries (Launcher)
     cp -L "$SYSROOT/libncurses.so.6" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libncurses not found"
     cp -L "$SYSROOT/libtinfo.so.6" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libtinfo not found"
@@ -170,6 +184,8 @@ install_libraries() {
     cp -L "$SYSROOT/libmvec.so.1" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libmvec not found"    
     # pcsx
     cp -L "$BUILD_DIR/sdl12-install/usr/lib/libSDL-1.2.so.0" "$ROOTFS_BUILD/usr/lib" 2>/dev/null || print_warning "sdl12-compat not found"
+    # armsx2 (SDL3 for input/audio)
+    cp -a "$BUILD_DIR"/sdl3-install/usr/lib/libSDL3.so* "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "SDL3 not found"
     # ppsspp covered by previous libraries
 
     print_step "Libraries installed!"
@@ -212,13 +228,27 @@ install_emulators() {
         print_step "pcsx-rearmed installed!"
     fi
 
-    if [ -d "$BUILD_DIR/emulators/ppsspp/bin" ]; then
-        cp -ar "$BUILD_DIR/emulators/ppsspp/assets"/* \
-            "$ROOTFS_BUILD/usr/bin/assets/"
-        cp -a "$BUILD_DIR/emulators/ppsspp/bin/PPSSPPSDL" \
+    if [ -d "$BUILD_DIR/emulators/dolphin" ]; then
+        cp -a "$BUILD_DIR/emulators/dolphin/bin/dolphin-emu-nogui" \
             "$ROOTFS_BUILD/usr/bin/"
+        mkdir -p "$ROOTFS_BUILD/usr/share/dolphin-emu/sys"
+        cp -ar "$BUILD_DIR/emulators/dolphin/sys"/* \
+            "$ROOTFS_BUILD/usr/share/dolphin-emu/sys/"
 
-        print_step "ppsspp installed!"
+        print_step "dolphin installed!"
+    fi
+
+    if [ -d "$BUILD_DIR/emulators/armsx2" ]; then
+        # Binary and resources must be co-located: PCSX2 resolves its
+        # resource dir relative to the real binary path (/proc/self/exe)
+        mkdir -p "$ROOTFS_BUILD/usr/share/armsx2"
+        cp -a "$BUILD_DIR/emulators/armsx2/bin"/* \
+            "$ROOTFS_BUILD/usr/share/armsx2/"
+        cp -ar "$BUILD_DIR/emulators/armsx2/resources" \
+            "$ROOTFS_BUILD/usr/share/armsx2/"
+        ln -sf ../share/armsx2/armsx2-sdl "$ROOTFS_BUILD/usr/bin/armsx2-sdl"
+
+        print_step "armsx2 installed!"
     fi
 
     print_step "Emulators installed!"

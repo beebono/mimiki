@@ -61,11 +61,21 @@ build_launcher() {
     print_step "Launcher built!"
 }
 
+build_aggregator() {
+    print_step "Building Input Aggregator..."
+
+    cd "$REPO_ROOT/system/aggregator"
+    make
+
+    print_step "Input Aggregator built!"
+}
+
 main() {
     print_step "MIMIKI Launcher Build"
 
     check_dependencies
     build_launcher
+    build_aggregator
 
     print_step "MIMIKI Launcher Build Complete!"
 }
