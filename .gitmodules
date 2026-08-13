@@ -57,10 +57,6 @@
 [submodule "external/tools/gptfdisk"]
 	path = external/tools/gptfdisk
 	url = https://github.com/samangh/gptfdisk.git
-[submodule "external/base/mali-kbase"]
-	path = external/base/mali-kbase
-	url = https://github.com/beebono/mali_kbase.git
-	branch = ums512
 [submodule "external/base/linux"]
 	path = external/base/linux
 	url = https://github.com/beebono/linux-mainline-sprd.git
@@ -69,3 +65,9 @@
 	path = external/tools/SDL3
 	url = https://github.com/libsdl-org/SDL.git
 	branch = main
+[submodule "external/tools/mesa"]
+	path = external/tools/mesa
+	url = https://gitlab.freedesktop.org/mesa/mesa.git
+[submodule "external/base/mali-kbase"]
+	path = external/base/mali-kbase
+	url = https://github.com/beebono/mali_kbase

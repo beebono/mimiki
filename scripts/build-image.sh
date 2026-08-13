@@ -1,5 +1,17 @@
 #!/bin/bash
-# MIMIKI - SD Card Image Creation Script (RG Rotate / Unisoc UMS512 T618)
+# MIROKI - SD Card Image Creation Script (RG Rotate / Unisoc UMS512 T618)
+#
+# Fully unprivileged: the FAT boot filesystem is built as a plain file with
+# mkfs.vfat + mtools, the GPT is written with sfdisk on a regular file, and
+# the raw u-boot/squashfs images are dd'd into their partition offsets.
+# No loop devices, no root, no sudo.
+#
+# Layout (the SPL finds U-Boot by scanning the SD GPT for a partition
+# literally named "uboot", ahead of the eMMC uboot_a/b slots):
+#   p1 = raw "uboot"  -> uboot.bin (DHTB)
+#   p2 = FAT32 boot   -> /extlinux/extlinux.conf + /Image + /<dtb>
+#   p3 = squashfs     -> MIROKI rootfs
+#   p4 = games        -> created on-device by the initramfs (sgdisk -e -N 4)
 set -e
 
 # Colors
@@ -17,22 +29,11 @@ OUTPUT_DIR="$BUILD_DIR/images"
 
 DTB_NAME="ums512-rg-rotate"
 
-# Root size auto calculation (round up to next MiB)
-ROOTFS_SIZE=$(stat -c%s "$ROOTFS_SQUASHFS")
+MiB=1048576
 
 # Partition sizes (in MB)
-# The SPL finds U-Boot by scanning the SD card's GPT for a partition literally
-# named "uboot" (checked before the eMMC uboot_a/b slots, so it wins over the
-# stock u-boot). The DHTB payload is capped at 1MiB but keep some headroom.
 UBOOT_SIZE_MB=8
 BOOT_SIZE_MB=32
-ROOT_SIZE_MB=$(( (ROOTFS_SIZE + 1048575) / 1048576 ))
-if [ $ROOT_SIZE_MB -lt 32 ]; then
-    ROOT_SIZE_MB=32
-fi
-
-# Total Size (partition table padding at end)
-IMAGE_SIZE_MB=$((1 + UBOOT_SIZE_MB + BOOT_SIZE_MB + ROOT_SIZE_MB + 2))
 
 print_step() {
     echo -e "${GREEN}==>${NC} $1" >&2
@@ -49,13 +50,8 @@ print_warning() {
 check_prerequisites() {
     print_step "Checking prerequisites..."
 
-    if [ "$EUID" -ne 0 ]; then
-        print_error "This script must be run as root for loop device mounting"
-        exit 1
-    fi
-
     local missing_tools=()
-    for tool in dd parted mkfs.vfat losetup; do
+    for tool in dd sfdisk mkfs.vfat mmd mcopy truncate stat; do
         if ! command -v "$tool" &> /dev/null; then
             missing_tools+=("$tool")
         fi
@@ -63,6 +59,7 @@ check_prerequisites() {
 
     if [ ${#missing_tools[@]} -ne 0 ]; then
         print_error "Missing required tools: ${missing_tools[*]}"
+        print_error "(mmd/mcopy come from the 'mtools' package)"
         exit 1
     fi
 
@@ -88,166 +85,105 @@ check_prerequisites() {
         exit 1
     fi
 
-    print_step "Prerequisites check passed!"
-}
-
-create_image_file() {
-    print_step "Creating blank image file ($IMAGE_SIZE_MB MB)..."
-
-    mkdir -p "$OUTPUT_DIR"
-    local image_path="$OUTPUT_DIR/mimiki-sdcard.img"
-    dd if=/dev/zero of="$image_path" bs=1M count=0 seek=$IMAGE_SIZE_MB status=none
-
-    echo "$image_path"
-}
-
-create_partitions() {
-    local image_path="$1"
-
-    # 1MiB alignment gap up front for the primary GPT
-    local uboot_start=1
-    local uboot_end=$((uboot_start + UBOOT_SIZE_MB))
-    local boot_start=$uboot_end
-    local boot_end=$((boot_start + BOOT_SIZE_MB))
-    local root_start=$boot_end
-    local root_end=$((root_start + ROOT_SIZE_MB))
-
-    print_step "Creating partition table..."
-    parted -s "$image_path" mklabel gpt
-    print_step "Creating uboot partition (${UBOOT_SIZE_MB}MB, GPT name 'uboot')..."
-    parted -s "$image_path" mkpart uboot ${uboot_start}MiB ${uboot_end}MiB
-    print_step "Creating boot partition (${BOOT_SIZE_MB}MB, GPT name 'vfat')..."
-    parted -s "$image_path" mkpart vfat fat32 ${boot_start}MiB ${boot_end}MiB
-    print_step "Setting ESP flag on boot partition for U-Boot detection..."
-    parted -s "$image_path" set 2 esp on
-    print_step "Creating root partition (${ROOT_SIZE_MB}MB, GPT name 'rootfs')..."
-    parted -s "$image_path" mkpart rootfs ${root_start}MiB ${root_end}MiB
-    sync
-    parted -s "$image_path" print
-}
-
-setup_loop_device() {
-    local image_path="$1"
-
-    print_step "Setting up loop device..."
-    local loop_dev=$(losetup -f --show -P "$image_path")
-
-    if [ -z "$loop_dev" ]; then
-        print_error "Failed to create loop device"
+    local uboot_bytes
+    uboot_bytes=$(stat -c%s "$BOOTLOADER_DIR/uboot.bin")
+    if [ "$uboot_bytes" -gt $((UBOOT_SIZE_MB * MiB)) ]; then
+        print_error "uboot.bin ($uboot_bytes bytes) exceeds the uboot partition (${UBOOT_SIZE_MB}MiB)"
         exit 1
     fi
 
-    sleep 2
-    partprobe "$loop_dev" 2>/dev/null || true
-    sleep 1
-
-    echo "$loop_dev"
-}
-
-write_uboot_to_partition() {
-    local loop_dev="$1"
-
-    print_step "Writing uboot.bin to uboot partition (raw)..."
-
-    # The SPL loads the DHTB-wrapped U-Boot from the GPT partition named "uboot"
-    dd if="$BOOTLOADER_DIR/uboot.bin" \
-       of="${loop_dev}p1" \
-       bs=4M \
-       conv=fsync \
-       status=none
-
-    print_step "uboot.bin written to uboot partition!"
-}
-
-format_boot_partition() {
-    local loop_dev="$1"
-
-    print_step "Formatting boot partition..."
-
-    # Calculate partition size in 1KB blocks for mkfs.vfat
-    local part_size_bytes=$(blockdev --getsize64 "${loop_dev}p2")
-    local part_size_kb=$((part_size_bytes / 1024))
-    mkfs.vfat -F 32 -n MIMIKI "${loop_dev}p2" $part_size_kb
-
-    print_step "Boot partition formatted successfully!"
-}
-
-populate_boot_partition() {
-    local loop_dev="$1"
-
-    print_step "Populating boot partition..."
-
-    local mount_point=$(mktemp -d)
-    mount "${loop_dev}p2" "$mount_point"
-
-    ls -lh "$BUILD_DIR/boot/Image"
-    cp "$BUILD_DIR/boot/Image" "$mount_point/"
-    cp "$BUILD_DIR/boot/${DTB_NAME}.dtb" "$mount_point/"
-
-    print_step "Creating EXTLINUX boot configuration..."
-    mkdir -p "$mount_point/extlinux"
-    cat > "$mount_point/extlinux/extlinux.conf" <<EOF
-LABEL MIMIKI
-  KERNEL /Image
-  FDT /${DTB_NAME}.dtb
-  APPEND rootwait quiet loglevel=0 fbcon=font:TER16x32
-EOF
-
-    sync
-    umount "$mount_point"
-    rmdir "$mount_point"
-
-    print_step "Boot partition populated!"
-}
-
-write_squashfs_to_partition() {
-    local loop_dev="$1"
-
-    print_step "Writing rootfs.squashfs to rootfs partition (raw)..."
-    dd if="$ROOTFS_SQUASHFS" \
-       of="${loop_dev}p3" \
-       bs=4M \
-       conv=fsync \
-       status=none
-
-    print_step "rootfs.squashfs written to rootfs partition!"
-}
-
-cleanup_loop_device() {
-    print_step "Cleaning up loop device..."
-    losetup -D 2>/dev/null || true
+    print_step "Prerequisites check passed!"
 }
 
 main() {
-    print_step "MIMIKI SD Card Image Creation"
+    print_step "MIROKI SD Card Image Creation"
 
     check_prerequisites
-    local image_path=$(create_image_file)
-    print_step "Image file: $image_path"
-    create_partitions "$image_path"
-    local loop_dev=$(setup_loop_device "$image_path")
-    print_step "Loop device: $loop_dev"
-    write_uboot_to_partition "$loop_dev"
-    format_boot_partition "$loop_dev"
-    populate_boot_partition "$loop_dev"
-    write_squashfs_to_partition "$loop_dev"
-    cleanup_loop_device "$loop_dev"
 
-    # Chmod the build directory so it can be easily read or cleaned up later
-    chmod -R a+rw "$BUILD_DIR"
+    # Root size auto calculation (round up to next MiB)
+    local rootfs_size root_size_mb
+    rootfs_size=$(stat -c%s "$ROOTFS_SQUASHFS")
+    root_size_mb=$(( (rootfs_size + MiB - 1) / MiB ))
+    if [ $root_size_mb -lt 32 ]; then
+        root_size_mb=32
+    fi
+
+    # 1MiB alignment gap up front (primary GPT), 1MiB tail (backup GPT)
+    local uboot_start=1
+    local boot_start=$((uboot_start + UBOOT_SIZE_MB))
+    local root_start=$((boot_start + BOOT_SIZE_MB))
+    local image_size_mb=$((root_start + root_size_mb + 1))
+
+    mkdir -p "$OUTPUT_DIR"
+    local image_path="$OUTPUT_DIR/miroki-sdcard.img"
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    trap 'rm -rf "$tmpdir"' EXIT
+
+    # ------------------------------------------------------------------
+    # 1. Boot filesystem (FAT32) as a plain file
+    # ------------------------------------------------------------------
+    print_step "Building boot filesystem (${BOOT_SIZE_MB}MB FAT32)..."
+    local boot_img="$tmpdir/boot.img"
+    truncate -s $((BOOT_SIZE_MB * MiB)) "$boot_img"
+    mkfs.vfat -F 32 -n MIROKI "$boot_img" > /dev/null
+
+    cat > "$tmpdir/extlinux.conf" <<EOF
+LABEL MIROKI
+  KERNEL /Image
+  FDT /${DTB_NAME}.dtb
+  APPEND rootwait quiet loglevel=0 fbcon=font:TER16x32 vt.global_cursor_default=0
+EOF
+
+    mmd   -i "$boot_img" ::/extlinux
+    mcopy -i "$boot_img" "$BUILD_DIR/boot/Image"           "::/Image"
+    mcopy -i "$boot_img" "$BUILD_DIR/boot/${DTB_NAME}.dtb" "::/${DTB_NAME}.dtb"
+    mcopy -i "$boot_img" "$tmpdir/extlinux.conf"           "::/extlinux/extlinux.conf"
+    print_step "Boot filesystem built!"
+
+    # ------------------------------------------------------------------
+    # 2. Whole-disk image: GPT + dd everything into its offsets
+    # ------------------------------------------------------------------
+    print_step "Creating image file (${image_size_mb}MB)..."
+    rm -f "$image_path"
+    truncate -s $((image_size_mb * MiB)) "$image_path"
+
+    print_step "Writing partition table..."
+    # Named partitions: the SPL locates U-Boot by the GPT name "uboot";
+    # the boot partition carries the ESP type GUID for U-Boot's extlinux scan.
+    local GUID_RAW="21686148-6449-6E6F-744E-656564454649"   # raw bootloader
+    local GUID_ESP="C12A7328-F81F-11D2-BA4B-00A0C93EC93B"   # EFI System (FAT)
+    local GUID_LINUX="0FC63DAF-8483-4772-8E79-3D69D8477DE4" # Linux filesystem
+    sfdisk "$image_path" > /dev/null <<EOF
+label: gpt
+unit: sectors
+sector-size: 512
+start=$((uboot_start * MiB / 512)), size=$((UBOOT_SIZE_MB * MiB / 512)), type=$GUID_RAW,   name="uboot"
+start=$((boot_start * MiB / 512)),  size=$((BOOT_SIZE_MB * MiB / 512)),  type=$GUID_ESP,   name="vfat"
+start=$((root_start * MiB / 512)),  size=$((root_size_mb * MiB / 512)),  type=$GUID_LINUX, name="rootfs"
+EOF
+
+    print_step "Writing uboot.bin (DHTB) into uboot partition..."
+    dd if="$BOOTLOADER_DIR/uboot.bin" of="$image_path" bs=1M seek=$uboot_start conv=notrunc status=none
+
+    print_step "Writing boot filesystem..."
+    dd if="$boot_img" of="$image_path" bs=1M seek=$boot_start conv=notrunc status=none
+
+    print_step "Writing rootfs.squashfs..."
+    dd if="$ROOTFS_SQUASHFS" of="$image_path" bs=1M seek=$root_start conv=notrunc status=none
 
     print_step "SD card image created successfully!"
     echo "Output: $image_path"
     echo "Written Size: $(du --apparent-size -h "$image_path" | cut -f1)"
     echo "Logical Size: $(du -h "$image_path" | cut -f1)"
     echo ""
+    echo "Partition table:"
+    sfdisk -d "$image_path" 2>/dev/null | sed 's/^/  /'
+    echo ""
     echo "To flash to SD card:"
     echo "  make flash SDCARD=/dev/sdX"
     echo ""
     print_warning "Make sure to replace /dev/sdX with your actual SD card device!"
 }
-
-# No danglers!
-trap 'cleanup_loop_device "$loop_dev" 2>/dev/null || true' EXIT
 
 main "$@"

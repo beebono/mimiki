@@ -17,15 +17,16 @@ static bool mode_button_held = false;
 // Brightness: 4-100% in 7 steps of 16, default to ~50%
 static int current_brightness = 52;
 
-// Volume: sc2730 HP gain pair, hardware range 0-15, rcS boots it at 8
-static int current_volume = 8;
+// Volume: softvol user control from /etc/asound.conf (16 steps, -45..0dB).
+// The HP hardware "gains" are attenuators pinned by rcS; softvol is the
+// only runtime volume, like ROCKNIX does it in pipewire.
+static int current_volume = 6;
 
 static void set_hp_volume(int vol)
 {
     char cmd[160];
     snprintf(cmd, sizeof(cmd),
-             "amixer -q -c 0 cset name='HPL Gain HPL Playback Volume' %d;"
-             "amixer -q -c 0 cset name='HPR Gain HPR Playback Volume' %d",
+             "amixer -q -c 0 cset name='MIMIKI Playback Volume' %d,%d",
              vol, vol);
     system(cmd);
 }
@@ -63,21 +64,45 @@ static int find_device_by_name(const char *device_name)
     return -1;
 }
 
+static const char *device_names[] = {
+    "MIMIKI Gamepad",  // Aggregated pad (raw gamepad_keys is grabbed by mimiki-inputd)
+    "gpio-keys-system", // Power + Volume + Hall swivel
+};
+#define NUM_DEVICE_NAMES ((int)(sizeof(device_names) / sizeof(device_names[0])))
+
+static int named_fds[NUM_DEVICE_NAMES] = {-1, -1};
+static struct timespec last_rescan_time = {0};
+
+// The aggregator's virtual pad can appear after we start (or respawn after a
+// crash), so keep rescanning for missing devices rather than failing once.
+static void rescan_missing_devices(void)
+{
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    long since_ms = (now.tv_sec - last_rescan_time.tv_sec) * 1000 +
+                    (now.tv_nsec - last_rescan_time.tv_nsec) / 1000000;
+    if (since_ms < 2000)
+        return;
+    last_rescan_time = now;
+
+    num_devices = 0;
+    for (int i = 0; i < NUM_DEVICE_NAMES; i++)
+    {
+        if (named_fds[i] < 0)
+            named_fds[i] = find_device_by_name(device_names[i]);
+        if (named_fds[i] >= 0)
+            input_fds[num_devices++] = named_fds[i];
+    }
+}
+
 bool input_monitor_init(void)
 {
     num_devices = 0;
-    const char *device_names[] = {
-        "MIMIKI Gamepad",  // Aggregated pad (raw gamepad_keys is grabbed by mimiki-inputd)
-        "gpio-keys-system", // Power + Volume + Hall swivel
-    };
-
-    for (int i = 0; i < (int)(sizeof(device_names) / sizeof(device_names[0])); i++)
+    for (int i = 0; i < NUM_DEVICE_NAMES; i++)
     {
-        int fd = find_device_by_name(device_names[i]);
-        if (fd >= 0 && num_devices < MAX_INPUT_DEVICES)
-        {
-            input_fds[num_devices++] = fd;
-        }
+        named_fds[i] = find_device_by_name(device_names[i]);
+        if (named_fds[i] >= 0)
+            input_fds[num_devices++] = named_fds[i];
     }
 
     if (num_devices == 0)
@@ -89,6 +114,9 @@ bool input_monitor_init(void)
 void input_monitor_poll(InputEvents *events)
 {
     struct input_event ev;
+
+    if (num_devices < NUM_DEVICE_NAMES)
+        rescan_missing_devices();
 
     for (int i = 0; i < num_devices; i++)
     {
@@ -215,12 +243,15 @@ void input_monitor_poll(InputEvents *events)
                     events->nav_right = true;
                 break;
 
-            case BTN_EAST:
+            // A selects, B backs out. The aggregator emits proper
+            // positional codes, unlike the Flip's rocknix_joypad which
+            // shipped A/B swapped - hence the flip vs. the Flip layout.
+            case BTN_SOUTH:
                 if (ev.value == 1)
                     events->nav_select = true;
                 break;
 
-            case BTN_SOUTH:
+            case BTN_EAST:
                 if (ev.value == 1)
                     events->nav_back = true;
                 break;
@@ -249,6 +280,8 @@ void input_monitor_cleanup(void)
             input_fds[i] = -1;
         }
     }
+    for (int i = 0; i < NUM_DEVICE_NAMES; i++)
+        named_fds[i] = -1;
     num_devices = 0;
     mode_button_held = false;
     power_button_held = false;

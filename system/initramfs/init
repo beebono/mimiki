@@ -24,7 +24,9 @@ switch_to_mimiki() {
     mount --move /sys /newroot/sys
     mount --move /tmp /newroot/tmp
 
-    exec switch_root -c /dev/tty0 /newroot /sbin/init
+    # Console stays on serial (bootargs console=ttyS0): init/kernel chatter
+    # never touches the panel. The launcher gets tty0 via its inittab entry.
+    exec switch_root /newroot /sbin/init
 }
 
 mkdir -p /dev /mnt/games /newroot /tmp
@@ -34,7 +36,7 @@ mount -t sysfs sysfs /sys
 mount -t tmpfs -o size=64m,mode=1777 tmpfs /tmp
 mount -t devtmpfs devtmpfs /dev
 mkdir -p /dev/shm
-mount -t tmpfs -o size=128m,mode=1777 tmpfs /dev/shm
+mount -t tmpfs -o size=512m,mode=1777 tmpfs /dev/shm
 mkdir -p /dev/pts
 mount -t devpts devpts /dev/pts
 
@@ -86,29 +88,28 @@ fi
 mkdir -p /mnt/games
 mount "$PART_DEVICE" /mnt/games
 if [ $? -eq 0 ]; then
-    mkdir -p /mnt/games/data/ppsspp/PSP/SYSTEM
-    mkdir -p /mnt/games/data/saves
-    mkdir -p /mnt/games/data/states
+    mkdir -p /mnt/games/data/bios
     mkdir -p /mnt/games/data/.cache
+    mkdir -p /mnt/games/data/.config
     mkdir -p /mnt/games/n64
     mkdir -p /mnt/games/stn
     mkdir -p /mnt/games/dc
     mkdir -p /mnt/games/ps1
-    mkdir -p /mnt/games/psp
+    mkdir -p /mnt/games/gc
+    mkdir -p /mnt/games/ps2
 
     cat > /mnt/games/README.txt <<EOF
-MIMIKI - Game Storage
+MIROKI - Game Storage
 
 Place your game ROMs in the appropriate directories:
 
   /n64   - .z64, .n64, .v64
-  /stn   - .chd, .iso, .bin/.cue  ! BIOS FILES REQUIRED UNDER /data
-  /dc    - .chd, .gdi, .cdi       ! BIOS FILES REQUIRED UNDER /data
-  /ps1   - .chd, .pbp, .bin/.cue  ! BIOS FILES REQUIRED UNDER /data
-  /psp   - .chd, .cso, .iso
+  /gc    - .rvz, .iso, .gcz
+  /stn   - .chd, .iso, .bin/.cue  ! BIOS FILES REQUIRED UNDER /data/bios
+  /dc    - .chd, .gdi, .cdi       ! BIOS FILES REQUIRED UNDER /data/bios
+  /ps1   - .chd, .pbp, .bin/.cue  ! BIOS FILES REQUIRED UNDER /data/bios
+  /ps2   - .chd, .cso, .iso       ! BIOS FILES REQUIRED UNDER /data/bios
 
-You can also make these same base folders on a second SD card
-formatted as either fat32 or exfat and place your games in there!
 The launcher will automatically scan these directories on boot.
 
 For more information: https://github.com/beebono/mimiki

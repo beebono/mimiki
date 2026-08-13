@@ -1,4 +1,4 @@
-# MIMIKI Input Aggregator - Makefile
+# MIROKI Input Aggregator - Makefile
 
 # Cross-compilation settings
 CROSS_COMPILE ?= aarch64-linux-gnu-

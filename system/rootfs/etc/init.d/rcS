@@ -1,5 +1,5 @@
 #!/bin/sh
-# MIMIKI - System initialization script
+# MIROKI - System initialization script
 
 echo 0 > /sys/class/graphics/fbcon/cursor_blink
 echo -en "\033]P1E60000\033]P200E600\033]P7E6E6E6" > /dev/tty0
@@ -8,11 +8,36 @@ echo -en "\033]P1E60000\033]P200E600\033]P7E6E6E6" > /dev/tty0
 # ASoC stack defer-probes until this is up
 insmod /lib/modules/sprd-audcp-boot.ko 2>/dev/null
 
-# GPU: load the Mali kbase module (libmali blob is its userspace half)
+# GPU: mali_kbase (userspace half is the libmali blob; panfrost config'd out)
 insmod /lib/modules/mali_kbase.ko 2>/dev/null
 
 # Input: merge gamepad + rumble into the "MIMIKI Gamepad" virtual device
 /usr/bin/mimiki-inputd &
+
+# Seed the default emulator "home" (dotdirs + XDG config) onto the games
+# partition (copy-if-missing, so user edits survive updates)
+# (busybox cp has no -n, so copy file-by-file if missing)
+if [ -d /mnt/games/data ]; then
+    cd /usr/share/mimiki/home
+    find . -type f | while read -r f; do
+        dst="/mnt/games/data/${f#./}"
+        if [ ! -e "$dst" ]; then
+            mkdir -p "${dst%/*}"
+            cp "$f" "$dst"
+        fi
+    done
+    cd /
+
+    if [ -f /mnt/games/data/bios/psxonpsp660.bin ]; then
+        mkdir -p /mnt/games/data/.pcsx/bios
+        cp /mnt/games/data/bios/psxonpsp660.bin /mnt/games/data/.pcsx/bios/
+    fi
+    
+    if [ -f /mnt/games/data/bios/SCPH-70012.bin ]; then
+        mkdir -p /mnt/games/data/.config/ARMSX2/bios
+        cp /mnt/games/data/bios/SCPH-70012.bin /mnt/games/data/.config/ARMSX2/bios/
+    fi
+fi
 
 # Audio bring-up, transcribed from ROCKNIX's sprdphone-sc2730 UCM BootSequence.
 # The card defer-probes until sprd-audcp-boot (above) brings the AGDSP up, so
@@ -40,4 +65,10 @@ if [ -e /dev/snd/controlC0 ]; then
     amixer -q -c 0 cset name='Speaker Function' on
     amixer -q -c 0 cset name='Speaker1 Function' on
     amixer -q -c 0 cset name='VBC DAC0 AUD MDG Set' 1,1024
+
+    # Prime the softvol plugin (/etc/asound.conf): its "MIMIKI Playback
+    # Volume" user control only exists after the pcm is first opened.
+    # ~20ms of silence creates it, then set the default level (12/15).
+    head -c 3840 /dev/zero | aplay -q -D default -f S16_LE -r 48000 -c 2 - 2>/dev/null
+    amixer -q -c 0 cset name='MIMIKI Playback Volume' 6,6
 fi

@@ -1,6 +1,6 @@
 #define _GNU_SOURCE
 
-// MIMIKI input aggregator
+// MIROKI input aggregator
 //
 // Merges the RG Rotate's split input hardware into one virtual gamepad:
 //   - gpio-keys-gamepad: every button as a discrete GPIO (grabbed exclusively)
@@ -12,10 +12,18 @@
 // Also provides a dpad<->virtual-analog toggle for stickless play:
 // holding MODE and pressing THUMBR (the vestigial stick-click pad) switches
 // the dpad between BTN_DPAD_* passthrough and ABS_X/ABS_Y emission.
+//
+// Mode control from the launcher (pid in /tmp/mimiki-inputd.pid):
+//   SIGUSR1: N64 shift mode - while TR2 (R2) is held, the four face buttons
+//            emit BTN_TRIGGER_HAPPY1-4 (C-up/down/left/right) instead, and
+//            TR2 itself is swallowed as the dedicated shift key.
+//   SIGUSR2: back to defaults - shift off, dpad mode restored, everything
+//            recentered/released (the launcher only navigates by dpad).
 
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdarg.h>
 #include <linux/input.h>
 #include <linux/uinput.h>
 #include <poll.h>
@@ -42,12 +50,43 @@ static int ff_map[MAX_FF_SLOTS];
 
 static bool analog_mode = false;
 static bool mode_held = false;
+static bool n64_mode = false;
+static bool tr2_held = false;
+// Keycode emitted at press time for each face button (0 = not pressed), so
+// a release always matches its press even if the shift state changed between
+static int face_down_code[4];
 static volatile sig_atomic_t running = 1;
+static volatile sig_atomic_t n64_request = -1; // -1 none, 0 disable, 1 enable
 
 static void handle_signal(int sig)
 {
     (void)sig;
     running = 0;
+}
+
+static void handle_mode_signal(int sig)
+{
+    n64_request = (sig == SIGUSR1) ? 1 : 0;
+}
+
+// Log to the kernel ring buffer so failures are visible in dmesg -
+// there is no persistent console on this device.
+static void klog(const char *fmt, ...)
+{
+    static int kmsg_fd = -2;
+    if (kmsg_fd == -2)
+        kmsg_fd = open("/dev/kmsg", O_WRONLY);
+
+    char buf[256];
+    int n = snprintf(buf, sizeof(buf), "mimiki-inputd: ");
+    va_list ap;
+    va_start(ap, fmt);
+    n += vsnprintf(buf + n, sizeof(buf) - n, fmt, ap);
+    va_end(ap);
+
+    if (kmsg_fd >= 0)
+        write(kmsg_fd, buf, n);
+    fprintf(stderr, "%s\n", buf);
 }
 
 static int find_device_by_name(const char *device_name, bool grab)
@@ -91,6 +130,32 @@ static const int forwarded_keys[] = {
     BTN_TL, BTN_TR, BTN_TL2, BTN_TR2,
     BTN_SELECT, BTN_START, BTN_MODE, BTN_THUMBR,
     BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT,
+    // N64 C-buttons, emitted by the R2-shifted face buttons (joystick
+    // buttons 16-19: C-up, C-down, C-left, C-right)
+    BTN_TRIGGER_HAPPY1, BTN_TRIGGER_HAPPY2,
+    BTN_TRIGGER_HAPPY3, BTN_TRIGGER_HAPPY4,
+};
+
+// Face-button index (SOUTH/EAST/NORTH/WEST) -> shifted C-button code.
+// Layout mirrors the C cluster: NORTH=C-up, SOUTH=C-down, WEST=C-left,
+// EAST=C-right.
+static int face_index(int code)
+{
+    switch (code)
+    {
+    case BTN_SOUTH: return 0;
+    case BTN_EAST:  return 1;
+    case BTN_NORTH: return 2;
+    case BTN_WEST:  return 3;
+    default:        return -1;
+    }
+}
+
+static const int face_shift_code[4] = {
+    BTN_TRIGGER_HAPPY2, // SOUTH -> C-down
+    BTN_TRIGGER_HAPPY4, // EAST  -> C-right
+    BTN_TRIGGER_HAPPY1, // NORTH -> C-up
+    BTN_TRIGGER_HAPPY3, // WEST  -> C-left
 };
 
 static int create_virtual_pad(void)
@@ -249,8 +314,30 @@ static void handle_gamepad_event(void)
         if (ev.type != EV_KEY)
             continue;
 
+        int fi = face_index(ev.code);
+        if (fi >= 0)
+        {
+            // Press picks plain or shifted code; release/repeat reuses
+            // whatever the press emitted so nothing gets stuck
+            if (ev.value == 1)
+                face_down_code[fi] = (n64_mode && tr2_held)
+                    ? face_shift_code[fi] : ev.code;
+            int out = face_down_code[fi] ? face_down_code[fi] : ev.code;
+            emit(uinput_fd, EV_KEY, out, ev.value);
+            if (ev.value == 0)
+                face_down_code[fi] = 0;
+            continue;
+        }
+
         switch (ev.code)
         {
+        case BTN_TR2:
+            tr2_held = (ev.value != 0);
+            // In N64 mode R2 is the dedicated C-button shift; swallow it
+            if (!n64_mode)
+                emit(uinput_fd, EV_KEY, ev.code, ev.value);
+            break;
+
         case BTN_MODE:
             mode_held = (ev.value != 0);
             emit(uinput_fd, EV_KEY, ev.code, ev.value);
@@ -311,31 +398,56 @@ static void handle_gamepad_event(void)
     }
 }
 
+static void write_pidfile(void)
+{
+    FILE *f = fopen("/tmp/mimiki-inputd.pid", "w");
+    if (f)
+    {
+        fprintf(f, "%d\n", getpid());
+        fclose(f);
+    }
+}
+
 int main(void)
 {
     signal(SIGTERM, handle_signal);
     signal(SIGINT, handle_signal);
+    signal(SIGUSR1, handle_mode_signal);
+    signal(SIGUSR2, handle_mode_signal);
+    write_pidfile();
 
     for (int i = 0; i < MAX_FF_SLOTS; i++)
         ff_map[i] = -1;
 
-    // The gamepad must exist; the vibrator is optional (rumble just absent)
-    gamepad_fd = find_device_by_name(GAMEPAD_NAME, true);
+    // The gamepad must exist; the vibrator is optional (rumble just absent).
+    // Wait for the device rather than dying if we raced device creation.
+    for (int tries = 0; tries < 100; tries++)
+    {
+        gamepad_fd = find_device_by_name(GAMEPAD_NAME, true);
+        if (gamepad_fd >= 0)
+            break;
+        usleep(100000);
+    }
     if (gamepad_fd < 0)
     {
-        fprintf(stderr, "aggregator: gamepad device '%s' not found\n",
-                GAMEPAD_NAME);
+        klog("gamepad device '%s' not found after 10s, giving up", GAMEPAD_NAME);
         return 1;
     }
 
     vibra_fd = find_device_by_name(VIBRA_NAME, false);
+    if (vibra_fd < 0)
+        klog("vibrator '%s' not found, rumble disabled", VIBRA_NAME);
 
     uinput_fd = create_virtual_pad();
     if (uinput_fd < 0)
     {
+        klog("uinput device creation failed: %s", strerror(errno));
         close(gamepad_fd);
         return 1;
     }
+
+    klog("up: virtual pad created (gamepad grabbed, rumble %s)",
+         vibra_fd >= 0 ? "on" : "off");
 
     struct pollfd fds[2] = {
         {.fd = gamepad_fd, .events = POLLIN},
@@ -344,6 +456,31 @@ int main(void)
 
     while (running)
     {
+        if (n64_request >= 0)
+        {
+            n64_mode = (n64_request == 1);
+            n64_request = -1;
+            if (!n64_mode)
+            {
+                // Emulator exited: restore dpad navigation for the launcher
+                // and release anything a mode change may have latched
+                analog_mode = false;
+                emit(uinput_fd, EV_ABS, ABS_X, 0);
+                emit(uinput_fd, EV_ABS, ABS_Y, 0);
+                emit(uinput_fd, EV_KEY, BTN_DPAD_UP, 0);
+                emit(uinput_fd, EV_KEY, BTN_DPAD_DOWN, 0);
+                emit(uinput_fd, EV_KEY, BTN_DPAD_LEFT, 0);
+                emit(uinput_fd, EV_KEY, BTN_DPAD_RIGHT, 0);
+                emit(uinput_fd, EV_KEY, BTN_TRIGGER_HAPPY1, 0);
+                emit(uinput_fd, EV_KEY, BTN_TRIGGER_HAPPY2, 0);
+                emit(uinput_fd, EV_KEY, BTN_TRIGGER_HAPPY3, 0);
+                emit(uinput_fd, EV_KEY, BTN_TRIGGER_HAPPY4, 0);
+                emit(uinput_fd, EV_SYN, SYN_REPORT, 0);
+                for (int i = 0; i < 4; i++)
+                    face_down_code[i] = 0;
+            }
+        }
+
         if (poll(fds, 2, -1) < 0)
         {
             if (errno == EINTR)

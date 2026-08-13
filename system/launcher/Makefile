@@ -1,4 +1,4 @@
-# MIMIKI Launcher - Makefile
+# MIROKI Launcher - Makefile
 
 # Cross-compilation settings
 CROSS_COMPILE ?= aarch64-linux-gnu-

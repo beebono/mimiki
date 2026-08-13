@@ -1,6 +1,6 @@
 #!/bin/bash
-# MIMIKI - SDL2 Build Script
-# Cross-compiles a minimal SDL2 for KMS/DRM + Vulkan
+# MIROKI - Launcher Build Script
+# Cross-compiles the ncurses launcher for aarch64
 set -e
 
 # Colors
@@ -13,7 +13,6 @@ NC='\033[0m'
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="$REPO_ROOT/build"
 LAUNCHER_DIR="$REPO_ROOT/system/launcher"
-SDL2_INSTALL="$BUILD_DIR/sdl2-install"
 
 # Cross-compilation
 CROSS_COMPILE=aarch64-linux-gnu-
@@ -44,11 +43,6 @@ check_dependencies() {
         exit 1
     fi
 
-    if [ ! -d "$SDL2_INSTALL" ]; then
-        print_error "SDL2 isn't built yet! Run 'make tools' first!"
-        exit 1
-    fi
-
     print_step "All dependencies found!"
 }
 
@@ -70,14 +64,24 @@ build_aggregator() {
     print_step "Input Aggregator built!"
 }
 
+build_glinfo() {
+    print_step "Building GL Info (debug tool)..."
+
+    cd "$REPO_ROOT/system/glinfo"
+    make
+
+    print_step "GL Info built!"
+}
+
 main() {
-    print_step "MIMIKI Launcher Build"
+    print_step "MIROKI Launcher Build"
 
     check_dependencies
     build_launcher
     build_aggregator
+    build_glinfo
 
-    print_step "MIMIKI Launcher Build Complete!"
+    print_step "MIROKI Launcher Build Complete!"
 }
 
 main "$@"

@@ -1,8 +1,8 @@
-# MIMIKI - Minimal Miyoo Kiosk
+# MIROKI - Minimal Rotate Kiosk (Sibling to MIMIKI)
 
-A minimal emulation platform for the Miyoo Flip (RK3566).
-MIMIKI provides a lightweight Linux OS image with a custom ncurses-based launcher
-and pre-configured emulators for N64, Saturn, Dreamcast, PS1, and PSP.
+A minimal emulation platform for the Anbernic RG Rotate.
+MIROKI provides a lightweight Linux OS image with a custom ncurses-based launcher
+and pre-configured emulators for N64, GameCube, Saturn, Dreamcast, PS1, and PS2.
 
 ---
 
@@ -14,19 +14,13 @@ and pre-configured emulators for N64, Saturn, Dreamcast, PS1, and PSP.
 
 ## Installation
 
-**GammaLoader must be installed to the stock firmware for SD Card booting to work!**
-**If you have GammaLoader installed already, skip immediately to step 2!**
+**A Linux-capable SPL must be installed for SD Card booting to work!**
+**If you know yours is installed already, skip immediately to step 2!**
 
-1. Download the `GammaLoaderMiyooFlip.zip` file from Releases
-    1. Prepare an empty FAT32 formatted SD Card
-    2. Copy/Unzip the `App` folder from inside the `GammaLoaderMiyooFlip.zip` file
-    so that it sits directly at the root of the previously prepared SD Card.
-    3. Insert the loaded SD card into your Miyoo Flip and power it on.
-    4. Navigate to the App section of the stock firmware and launch the
-    `Gamma Bootloader Installer` application.
-    5. Wait until your device reboots back into the stock firmware. 
+1. Download the `spl-flasher.zip` file from Releases, extract it, and read
+the contained README.txt ***CAREFULLY*** and ***THOROUGHLY***
 
-2. Download the latest `mimiki-sdcard.img` from Releases and use your 
+2. Download the latest `miroki-sdcard.img` from Releases and use your 
 preferred image flashing software to write the image to the target SD Card.
 
 You can also build the image directly on your machine by following the steps laid
@@ -36,45 +30,31 @@ out under the `Build Requirements` section below and the sections beneath it.
 
 ## SD Card Setup
 
-The Miyoo Flip has two SD card slots. MIMIKI supports both single and dual SD card configurations.
-
-### Single SD Card
-
-Place the MIMIKI system image in **SD slot 1 (Right Side Slot under Power Button)**.
+Place your flashed MIROKI image in the SD slot.
 ROMs and game assets are stored on the same card under the appropriate directories.
-This is the simplest setup and works after initial boot.
-
-```
-SD Slot 1: MIMIKI system image + games
-SD Slot 2: (unused)
-```
-
-### Two SD Cards
-
-For expanded storage, a second SD card can be added to **SD slot 2**.
-MIMIKI will automatically mount it at `/mnt/games2`, and files will be propagated as needed.
-
-```
-SD Slot 1: MIMIKI system image (boot + root) + primary game storage (/mnt/games)
-SD Slot 2: Additional game storage (/mnt/games2)
-```
-
-Format the second card as exFAT or FAT32 before use.
+You will need to boot your MIROKI image at least once to populate the GAMES partition.
 
 ### Game Directory Structure
 
-Create the following directories on your SD card(s) and place your ROMs inside.
-The launcher scans these directories automatically on boot.
+The following directories are created on your SD card on first boot and
+the launcher scans these directories automatically every subsequent boot.
 
-| Directory | System      | Supported Formats               | Notes                             |
-|-----------|-------------|---------------------------------|-----------------------------------|
-| `/n64`    | Nintendo 64 | `.z64`, `.n64`, `.v64`          |                                   |
-| `/stn`    | Saturn      | `.chd`, `.iso`, `.bin`/`.cue`   | BIOS files required under `/data` |
-| `/dc`     | Dreamcast   | `.chd`, `.gdi`, `.cdi`          | BIOS files required under `/data` |
-| `/ps1`    | PlayStation | `.chd`, `.pbp`, `.bin`/`.cue`   | BIOS files required under `/data` |
-| `/psp`    | PSP         | `.chd`, `.cso`, `.iso`          |                                   |
+| Directory | System        | Supported Formats               | Notes                             |
+|-----------|---------------|---------------------------------|-----------------------------------|
+| `/n64`    | Nintendo 64   | `.z64`, `.n64`, `.v64`          |                                   |
+| `/gc`     | GameCube      | `.rvz`, `.iso`, `.gcz`          |                                   |
+| `/stn`    | Saturn        | `.chd`, `.iso`, `.bin`/`.cue`   | BIOS files required under `/data/bios` |
+| `/dc`     | Dreamcast     | `.chd`, `.gdi`, `.cdi`          | BIOS files required under `/data/bios` |
+| `/ps1`    | PlayStation   | `.chd`, `.pbp`, `.bin`/`.cue`   | BIOS files required under `/data/bios` |
+| `/ps2`    | PlayStation 2 | `.chd`, `.cso`, `.iso`          | BIOS files required under `/data/bios` |
 
-These same directories can be created on a second SD card if you prefer separated storage.
+Two further directories are created for shared state:
+
+| Directory      | Purpose                                            |
+|----------------|----------------------------------------------------|
+| `/data/bios`   | BIOS images for Saturn, Dreamcast, PS1, and PS2    |
+| `/data/.cache` | Emulator caches and shader/state data              |
+| `/data/.config`| Per-emulator config, seeded from defaults on boot  |
 
 ---
 
@@ -83,25 +63,30 @@ These same directories can be created on a second SD card if you prefer separate
 | Key Combo | Effect                        |
 |-----------|-------------------------------|
 | M + Start | Exit to Menu                  |
-| M + R3    | Save State                    |
-| M + L3    | Load State                    |
+| M + Aux*  | Toggle DPAD <> Analog input   |
+| M + Select| Save State                    |
+| M + L1    | Load State                    |
 | M + VolUp | Brightness Up                 |
 | M + VolDn | Brightness Down               |
 | Lid       | Sleep/Wake                    |
 | Tap Pwr   | Sleep/Wake                    |
 | Hold Pwr  | Exit+Pwroff (!DOES NOT SAVE!) |
 
+*Aux is the small circular button on the right side of
+the device, beneath the power button.
+
 ---
 
 ## Supported Emulators
 
-| System      | Emulator     |
-|-------------|--------------|
-| N64         | mupen64plus  |
-| Saturn      | yabasanshiro |
-| Dreamcast   | Flycast      |
-| PlayStation | PCSX-ReARMed |
-| PSP         | PPSSPP       |
+| System        | Emulator     |
+|---------------|--------------|
+| N64           | mupen64plus  |
+| GameCube      | Dolphin      |
+| Saturn        | yabasanshiro |
+| Dreamcast     | Flycast      |
+| PlayStation   | PCSX-ReARMed |
+| PlayStation 2 | ARMSX2       |
 
 ---
 
@@ -119,7 +104,7 @@ The project uses Git submodules for the kernel, bootloader, libraries, and emula
 Clone with all submodules in one step:
 
 ```sh
-git clone --recurse-submodules https://github.com/beebono/mimiki.git
+git clone --branch rg-rotate --recurse-submodules https://github.com/beebono/mimiki.git
 cd mimiki
 ```
 
@@ -146,7 +131,7 @@ The standard build sequence is:
 ```sh
 make tools        # Build libraries and utilities (SDL2, busybox, etc.)
 make boot         # Build U-Boot and Linux kernel
-make launcher     # Build the MIMIKI SDL2 launcher
+make launcher     # Build the MIROKI ncurses launcher
 make emulators    # Build the standalone emulators
 make rootfs       # Assemble the root filesystem
 make image        # Create a bootable SD card image (requires root)

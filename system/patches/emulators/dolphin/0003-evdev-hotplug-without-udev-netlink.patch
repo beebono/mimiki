@@ -1,0 +1,18 @@
+diff --git a/Source/Core/InputCommon/ControllerInterface/evdev/evdev.cpp b/Source/Core/InputCommon/ControllerInterface/evdev/evdev.cpp
+index 0f6730720f..5d84c5d233 100644
+--- a/Source/Core/InputCommon/ControllerInterface/evdev/evdev.cpp
++++ b/Source/Core/InputCommon/ControllerInterface/evdev/evdev.cpp
+@@ -342,6 +342,13 @@ void InputBackend::HotplugThreadFunc()
+   udev_monitor_filter_add_match_subsystem_devtype(monitor, "input", nullptr);
+   udev_monitor_enable_receiving(monitor);
+   const int monitor_fd = udev_monitor_get_fd(monitor);
++  if (monitor_fd < 0)
++  {
++    // No udev daemon / no netlink (e.g. CONFIG_NET-less kernels): hotplug
++    // monitoring is unavailable. FD_SET(-1) would abort the process.
++    WARN_LOG_FMT(CONTROLLERINTERFACE, "evdev hotplug unavailable (no udev netlink monitor)");
++    return;
++  }
+ 
+   while (m_hotplug_thread_running.IsSet())
+   {

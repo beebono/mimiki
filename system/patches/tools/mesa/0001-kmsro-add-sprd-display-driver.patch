@@ -1,0 +1,12 @@
+diff --git a/src/gallium/targets/dril/meson.build b/src/gallium/targets/dril/meson.build
+index 55f10dc7805..8f8110726ac 100644
+--- a/src/gallium/targets/dril/meson.build
++++ b/src/gallium/targets/dril/meson.build
+@@ -92,6 +92,7 @@ foreach d : [[with_gallium_kmsro, [
+                'rockchip',
+                'rzg2l-du',
+                'ssd130x',
++               'sprd',
+                'st7586',
+                'st7735r',
+                'sti',

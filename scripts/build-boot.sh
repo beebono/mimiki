@@ -1,5 +1,5 @@
 #!/bin/bash
-# MIMIKI - Boot Build Script (RG Rotate / Unisoc UMS512 T618)
+# MIROKI - Boot Build Script (RG Rotate / Unisoc UMS512 T618)
 set -e
 
 # Colors
@@ -14,7 +14,6 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="$REPO_ROOT/build"
 UBOOT_DIR="$REPO_ROOT/external/base/u-boot"
 KERNEL_DIR="$REPO_ROOT/external/base/linux"
-MALI_DIR="$REPO_ROOT/external/base/mali-kbase"
 INITRAMFS_DIR="$BUILD_DIR/initramfs"
 TOOLS_DIR="$REPO_ROOT/external/tools"
 FIRMWARE_DIR="$REPO_ROOT/system/prebuilts/firmware"
@@ -30,13 +29,16 @@ JOBS=$(nproc)
 UBOOT_DEFCONFIG="ums512_rg_rotate_defconfig"
 UBOOT_DEVICE_TREE="ums512_rg_rotate"
 # Newer GCC hates this older vendor code; known-working on device, so just
-# downgrade the warnings and set an older std to make it build.
-UBOOT_KCFLAGS="-std=gnu11 \
-    -Wno-error=implicit-int \
-    -Wno-error=implicit-function-declaration \
-    -Wno-error=int-conversion \
-    -Wno-error=incompatible-pointer-types \
-    -Wno-error=return-mismatch"
+# downgrade the warnings and set an older std to make it build. Some of these
+# warning options only exist in newer GCC (return-mismatch is GCC 14+), so
+# probe each one and keep only what this compiler understands.
+UBOOT_KCFLAGS="-std=gnu11"
+for flag in implicit-int implicit-function-declaration int-conversion \
+            incompatible-pointer-types return-mismatch; do
+    if ${CROSS_COMPILE}gcc -W${flag} -E -x c /dev/null >/dev/null 2>&1; then
+        UBOOT_KCFLAGS="$UBOOT_KCFLAGS -Wno-error=${flag}"
+    fi
+done
 
 DTB_NAME="ums512-rg-rotate"
 
@@ -185,7 +187,6 @@ apply_patches() {
 apply_all_patches() {
     apply_patches "U-Boot" "$UBOOT_DIR" "u-boot"
     apply_patches "kernel" "$KERNEL_DIR" "linux"
-    apply_patches "Mali" "$MALI_DIR" "mali-kbase"
 }
 
 build_uboot() {
@@ -244,7 +245,7 @@ configure_kernel() {
     if [ -f "$CONFIG_DIR/mimiki.config" ]; then
         cp "$CONFIG_DIR/mimiki.config" .config
     else
-        print_error "MIMIKI config not found at $CONFIG_DIR/mimiki.config"
+        print_error "MIROKI config not found at $CONFIG_DIR/mimiki.config"
         exit 1
     fi
 }
@@ -266,26 +267,21 @@ build_kernel() {
     print_step "Kernel built!"
 }
 
-build_mali_kbase() {
+build_kbase() {
+    # Out-of-tree mali_kbase (userspace half is the libmali blob). Same
+    # source pin and options as ROCKNIX T618: devicetree platform, real HW,
+    # devfreq. Binds to the same "arm,mali-bifrost" DT node panfrost would.
     print_step "Building mali_kbase module..."
 
-    make -j${JOBS} -C "$MALI_DIR/product/kernel/drivers/gpu/arm/midgard" KDIR="$KERNEL_DIR" \
-        CONFIG_MALI_MIDGARD=m \
-        CONFIG_MALI_PLATFORM_NAME=devicetree \
-        CONFIG_MALI_REAL_HW=y \
-        CONFIG_MALI_DEVFREQ=y \
-        CONFIG_MALI_GATOR_SUPPORT=y
+    local KBASE_DIR="$REPO_ROOT/external/base/mali-kbase/product/kernel/drivers/gpu/arm/midgard"
 
-    local KBASE_KO="$MALI_DIR/product/kernel/drivers/gpu/arm/midgard/mali_kbase.ko"
-    if [ ! -f "$KBASE_KO" ]; then
-        print_error "mali_kbase.ko not found! Build may have failed"
-        exit 1
-    fi
+    make -j${JOBS} -C "$KBASE_DIR" KDIR="$KERNEL_DIR" \
+        CONFIG_MALI_MIDGARD=m CONFIG_MALI_PLATFORM_NAME=devicetree \
+        CONFIG_MALI_REAL_HW=y CONFIG_MALI_DEVFREQ=y CONFIG_MALI_GATOR_SUPPORT=y
 
-    mkdir -p "$BUILD_DIR/modules"
-    cp "$KBASE_KO" "$BUILD_DIR/modules/"
+    cp "$KBASE_DIR/mali_kbase.ko" "$BUILD_DIR/modules/"
 
-    print_step "mali_kbase.ko installed to $BUILD_DIR/modules/"
+    print_step "mali_kbase built!"
 }
 
 install_kernel() {
@@ -298,7 +294,7 @@ install_kernel() {
 }
 
 main() {
-    echo -e "${GREEN}MIMIKI Boot Build${NC}"
+    echo -e "${GREEN}MIROKI Boot Build${NC}"
 
     check_dependencies
     populate_initramfs
@@ -308,16 +304,16 @@ main() {
     install_uboot
     configure_kernel
     build_kernel
-    build_mali_kbase
+    build_kbase
     install_kernel
 
-    echo "MIMIKI Boot Build Complete!"
+    echo "MIROKI Boot Build Complete!"
     echo ""
     echo "Build artifacts:"
     echo "  U-Boot:  $BUILD_DIR/boot/uboot.bin (DHTB, SPL-loadable)"
     echo "  Kernel:  $BUILD_DIR/boot/Image"
     echo "  DTB:     $BUILD_DIR/boot/${DTB_NAME}.dtb"
-    echo "  Modules: $BUILD_DIR/modules/mali_kbase.ko"
+    echo "  Modules: $BUILD_DIR/modules/"
 }
 
 main "$@"

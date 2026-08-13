@@ -1,8 +1,8 @@
 diff --git a/yabause/src/CMakeLists.txt b/yabause/src/CMakeLists.txt
-index e055b569..ff7301e9 100644
+index 3cbafb74..869dde98 100644
 --- a/yabause/src/CMakeLists.txt
 +++ b/yabause/src/CMakeLists.txt
-@@ -362,6 +362,7 @@ if (YAB_WANT_OPENGL AND (YAB_RGB STREQUAL ""))
+@@ -356,6 +356,7 @@ if (YAB_WANT_OPENGL AND (YAB_RGB STREQUAL ""))
  		)
  		add_definitions(-DYAB_PORT_OSD)
  		
@@ -10,7 +10,7 @@ index e055b569..ff7301e9 100644
  		include(FindGLUT)
  		if (GLUT_FOUND)
  			message (WARNING "Deprecated Glut found. Support will be removed in the future. ")
-@@ -369,6 +370,7 @@ if (YAB_WANT_OPENGL AND (YAB_RGB STREQUAL ""))
+@@ -363,6 +364,7 @@ if (YAB_WANT_OPENGL AND (YAB_RGB STREQUAL ""))
  			add_definitions(-DHAVE_LIBGLUT=1)
  			set(YABAUSE_LIBRARIES ${YABAUSE_LIBRARIES} ${GLUT_LIBRARIES})
  		endif()
@@ -18,10 +18,10 @@ index e055b569..ff7301e9 100644
  
  		# glXGetProcAddress
  		#set(CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES} ${OPENGL_LIBRARIES})
-@@ -789,6 +791,20 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Windows")
- 		set(LIBVULKAN ${CMAKE_CURRENT_SOURCE_DIR}/vulkan/lib/x86/vulkan-1.lib )	
- 	endif()
- 
+@@ -775,6 +777,20 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+ 	include(vulkan/external_glfw.cmake)
+ 	set(LIBVULKAN_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/vulkan/include)
+ 	set(LIBVULKAN ${CMAKE_CURRENT_SOURCE_DIR}/vulkan/lib/x86_64/vulkan-1.lib )
 +elseif(${CMAKE_SYSTEM_NAME} MATCHES "Linux" AND NOT ANDROID)
 +	if(USE_VK_KHR_DISPLAY)
 +	  add_definitions(-DUSE_VK_KHR_DISPLAY=1)
@@ -37,9 +37,9 @@ index e055b569..ff7301e9 100644
 +		include(vulkan/external_shaderc.cmake)
 +	endif()
  else()
- 	set( LIBVULKAN_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/vulkan/Include)
- 	set( SHADERC_INCLUDE_DIR ${ANDROID_NDK}/sources/third_party/shaderc/include  )
-@@ -797,10 +813,10 @@ else()
+   set( SHADERC_INCLUDE_DIR ${ANDROID_NDK}/sources/third_party/shaderc/include  )
+   set( SHADERC_LIBRARY_DIR ${ANDROID_NDK}/sources/third_party/shaderc/libs/c++_shared/${ANDROID_ABI}  )
+@@ -782,10 +798,10 @@ else()
  	set( LIBVULKAN vulkan )
  endif()
  
@@ -53,11 +53,44 @@ index e055b569..ff7301e9 100644
  
  set( VULKAN_SOURCES 
   vulkan/FramebufferRenderer.cpp
-diff --git a/yabause/src/scsp.cpp b/yabause/src/scsp.cpp
-index c7209553..0b4bb4a0 100644
---- a/yabause/src/scsp.cpp
-+++ b/yabause/src/scsp.cpp
-@@ -5720,15 +5720,15 @@ extern "C" void * ScspAsynMainRealtime(void * p) {
+@@ -985,8 +1001,10 @@ if("${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "armv7-a")
+ endif()
+ if("${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "aarch64")
+ 		add_definitions(-DAARCH64)
+-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -std=c99 -march=armv8-a")
+-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -march=armv8-a -std=c++17 ")
++    # arch selection is left to the toolchain (-mcpu); a hardcoded
++    # -march=armv8-a here would override it and drop v8.2/LSE
++    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -std=c99")
++    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -std=c++17 ")
+ endif()
+ 
+ # Warnings defined to know when we're breaking compilation with MSVC
+@@ -1028,7 +1046,7 @@ assign_source_group(${yabause_SOURCES})
+ #----------------------------------------------------------------------
+ # Library for vulkan plugin
+ if(YAB_WANT_VULKAN)
+-	if(WIN32)
++	if(TARGET shaderc)
+ 		add_dependencies(yabause shaderc)
+ 	endif()
+ add_dependencies(yabause glm)
+diff --git a/yabause/src/scsp.c b/yabause/src/scsp.c
+index 314e6f5e..6e7ca6b9 100644
+--- a/yabause/src/scsp.c
++++ b/yabause/src/scsp.c
+@@ -102,6 +102,10 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301  USA
+ //
+ //--------------------------------------------------------------
+ 
++// clock_gettime/CLOCK_REALTIME need POSIX feature-test macros in strict C mode
++#ifndef _GNU_SOURCE
++#define _GNU_SOURCE
++#endif
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <stdarg.h>
+@@ -5671,15 +5675,15 @@ void ScspAsynMainRealtime(void * p) {
            }
          }
          pthread_mutex_unlock(&sync_mutex);
@@ -76,11 +109,24 @@ index c7209553..0b4bb4a0 100644
          if(rtn == 0){
            for (i = 0; i < samplecnt; i += step) {
              MM68KExec(step);
+diff --git a/yabause/src/vulkan/BUILD_OPTIONS.h b/yabause/src/vulkan/BUILD_OPTIONS.h
+index 0b062f38..62d9d410 100644
+--- a/yabause/src/vulkan/BUILD_OPTIONS.h
++++ b/yabause/src/vulkan/BUILD_OPTIONS.h
+@@ -18,7 +18,7 @@ Contributors:
+ // along with library directories. You will also need to add
+ // GLFWs "glfw3.lib" file into the project, this task is up to you.
+ // GLFW version 3.2 or newer is required.
+-#if defined(ANDROID)
++#if defined(ANDROID) || defined(USE_VK_KHR_DISPLAY)
+ #else
+ #define BUILD_USE_GLFW											1
+ #endif
 diff --git a/yabause/src/vulkan/Platform.cpp b/yabause/src/vulkan/Platform.cpp
-index 3478ab61..194738d3 100644
+index 9c92f1ee..1b76739b 100644
 --- a/yabause/src/vulkan/Platform.cpp
 +++ b/yabause/src/vulkan/Platform.cpp
-@@ -110,4 +110,19 @@ void AddRequiredPlatformInstanceExtensions(std::vector<const char *> *instance_e
+@@ -109,4 +109,19 @@ void AddRequiredPlatformInstanceExtensions(std::vector<const char *> *instance_e
    instance_extensions->push_back(VK_KHR_XCB_SURFACE_EXTENSION_NAME);
  }
  
@@ -101,10 +147,10 @@ index 3478ab61..194738d3 100644
 +
  #endif
 diff --git a/yabause/src/vulkan/Platform.h b/yabause/src/vulkan/Platform.h
-index bccbeb4c..e983ec9a 100644
+index 80e3f8aa..838a5352 100644
 --- a/yabause/src/vulkan/Platform.h
 +++ b/yabause/src/vulkan/Platform.h
-@@ -70,6 +70,11 @@ void AddRequiredPlatformDeviceExtensions(std::vector<const char*>* device_extens
+@@ -70,6 +70,11 @@ void AddRequiredPlatformInstanceExtensions(std::vector<const char *> *instance_e
  #include <android/native_window.h> // requires ndk r5 or newer
  #include <android/native_window_jni.h> // requires ndk r5 or newer
  
@@ -116,15 +162,44 @@ index bccbeb4c..e983ec9a 100644
  // LINUX ( Via XCB library )
  #elif defined( __linux )
  // there are other ways to create windows on linux,
-@@ -85,11 +90,4 @@ void AddRequiredPlatformDeviceExtensions(std::vector<const char*>* device_extens
- #error Platform not yet supported
+diff --git a/yabause/src/vulkan/Window.h b/yabause/src/vulkan/Window.h
+index d2c2ffef..bd759d09 100644
+--- a/yabause/src/vulkan/Window.h
++++ b/yabause/src/vulkan/Window.h
+@@ -66,7 +66,9 @@ public:
+   ANativeWindow *window;
+ #else
+   void setNativeWindow(void *nativeWindow) {}
++#if USE_FRAMEWORK_GLFW
+   GLFWwindow *getWindowHandle() { return _glfw_window; }
++#endif
  #endif
  
--#if defined(HAVE_LIBSDL2) 
--
--#include <SDL.h>
--#include <SDL_vulkan.h>
--
--#endif
--
- #include <vulkan/vulkan.h>
+   void resize(int width, int height);
+diff --git a/yabause/src/vulkan/external_shaderc.cmake b/yabause/src/vulkan/external_shaderc.cmake
+index 298a32c6..ed84969d 100644
+--- a/yabause/src/vulkan/external_shaderc.cmake
++++ b/yabause/src/vulkan/external_shaderc.cmake
+@@ -10,6 +10,13 @@ set( ADDITIONAL_CMAKE_ARGS
+  -DANDROID_NATIVE_API_LEVEL=${ANDROID_NATIVE_API_LEVEL}
+  -DCMAKE_TOOLCHAIN_FILE=${TOOL_CHAIN_ABSOLUTE_PATH}
+ )
++elseif(CMAKE_CROSSCOMPILING AND CMAKE_TOOLCHAIN_FILE)
++get_filename_component(TOOL_CHAIN_ABSOLUTE_PATH "${CMAKE_TOOLCHAIN_FILE}"
++                       REALPATH BASE_DIR "${CMAKE_BINARY_DIR}")
++
++set( ADDITIONAL_CMAKE_ARGS
++ -DCMAKE_TOOLCHAIN_FILE=${TOOL_CHAIN_ABSOLUTE_PATH}
++)
+ else()
+   set(ADDITIONAL_CMAKE_ARGS "")
+ endif()
+@@ -51,7 +58,7 @@ set(SHADERC_LIBRARY_DIR ${BINARY_DIR}/libshaderc )
+ if(MSVC)
+   set(SHADERC_LIBRARIES ${INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}shaderc_combined${CMAKE_STATIC_LIBRARY_SUFFIX}  )
+ else()
+-  set(SHADERC_LIBRARIES -lshaderc_combined )
++  set(SHADERC_LIBRARIES ${INSTALL_DIR}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}shaderc_combined${CMAKE_STATIC_LIBRARY_SUFFIX} )
+ endif()
+ 
+ 

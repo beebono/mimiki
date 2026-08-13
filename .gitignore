@@ -5,3 +5,4 @@
 /system/*/build
 /system/charge-monitor/charge-monitor
 *.o
+/external/tools/.shaderc-cache

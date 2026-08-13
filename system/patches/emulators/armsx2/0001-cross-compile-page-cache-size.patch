@@ -1,0 +1,28 @@
+diff --git a/cmake/Pcsx2Utils.cmake b/cmake/Pcsx2Utils.cmake
+index 712e2f59c2..c4ef1a1005 100644
+--- a/cmake/Pcsx2Utils.cmake
++++ b/cmake/Pcsx2Utils.cmake
+@@ -232,6 +232,11 @@ function(disable_compiler_warnings_for_target target)
+ endfunction()
+ 
+ function(detect_page_size)
++	# Cross builds can't try_run; take a pre-seeded value instead.
++	if(DEFINED HOST_PAGE_SIZE)
++		message(STATUS "Using pre-set host page size: ${HOST_PAGE_SIZE}")
++		return()
++	endif()
+ 	message(STATUS "Determining host page size")
+ 	set(detect_page_size_file ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeTmp/src.c)
+ 	file(WRITE ${detect_page_size_file} "
+@@ -258,6 +263,11 @@ int main() {
+ endfunction()
+ 
+ function(detect_cache_line_size)
++	# Cross builds can't try_run; take a pre-seeded value instead.
++	if(DEFINED HOST_CACHE_LINE_SIZE)
++		message(STATUS "Using pre-set host cache line size: ${HOST_CACHE_LINE_SIZE}")
++		return()
++	endif()
+ 	message(STATUS "Determining host cache line size")
+ 	set(detect_cache_line_size_file ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeTmp/src.c)
+ 	file(WRITE ${detect_cache_line_size_file} "

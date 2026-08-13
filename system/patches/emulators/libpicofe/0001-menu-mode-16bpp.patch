@@ -1,0 +1,15 @@
+diff --git a/plat_sdl.c b/plat_sdl.c
+index 031e162..a7a9cce 100644
+--- a/plat_sdl.c
++++ b/plat_sdl.c
+@@ -255,7 +255,9 @@ int plat_sdl_init(void)
+       g_menuscreen_h = h;
+   }
+ 
+-  plat_sdl_screen = SDL_SetVideoMode(g_menuscreen_w, g_menuscreen_h, 0,
++  /* 16bpp, not 0: bpp 0 means SDL_ANYFORMAT, and everything here (menu,
++   * game blits) writes RGB565 - see change_mode() in frontend/plat_sdl.c */
++  plat_sdl_screen = SDL_SetVideoMode(g_menuscreen_w, g_menuscreen_h, 16,
+       (flags = get_screen_flags()));
+   if (plat_sdl_screen == NULL) {
+     fprintf(stderr, "SDL_SetVideoMode failed: %s\n", SDL_GetError());

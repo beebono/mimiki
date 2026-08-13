@@ -1,0 +1,19 @@
+diff --git a/common/CrashHandler.cpp b/common/CrashHandler.cpp
+index a44f07af3a..7e964f99a6 100644
+--- a/common/CrashHandler.cpp
++++ b/common/CrashHandler.cpp
+@@ -371,6 +371,14 @@ void CrashHandler::WriteDumpForCaller()
+ 
+ void CrashHandler::CrashSignalHandler(int signal, siginfo_t* siginfo, void* ctx)
+ {
++#if defined(__aarch64__)
++	// No libbacktrace on this build - at least report where the fault hit
++	fprintf(stderr, "MIMIKI-DBG crash: sig=%d code=%d addr=%p pc=%p lr=%p\n",
++		signal, siginfo ? siginfo->si_code : 0,
++		siginfo ? siginfo->si_addr : nullptr,
++		ctx ? reinterpret_cast<void*>(static_cast<ucontext_t*>(ctx)->uc_mcontext.pc) : nullptr,
++		ctx ? reinterpret_cast<void*>(static_cast<ucontext_t*>(ctx)->uc_mcontext.regs[30]) : nullptr);
++#endif
+ 	// We can't continue from here. Just bail out and dump core.
+ 	std::fputs("Aborting application.\n", stderr);
+ 	std::fflush(stderr);

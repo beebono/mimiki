@@ -1,5 +1,5 @@
 #!/bin/bash
-# MIMIKI - Tools Build Script
+# MIROKI - Tools Build Script
 set -e
 
 # Colors
@@ -128,6 +128,7 @@ configure_tool() {
                 --disable-render-d3d \
                 --enable-joystick \
                 --enable-haptic \
+                --disable-libudev \
                 --enable-events \
                 --enable-timers \
                 --enable-file \
@@ -233,8 +234,10 @@ configure_tool() {
                 -DSDL_STATIC=OFF \
                 -DSDL_TEST_LIBRARY=OFF \
                 -DSDL_EXAMPLES=OFF \
+                -DSDL_UNIX_CONSOLE_BUILD=ON \
                 -DSDL_KMSDRM=ON \
                 -DSDL_VULKAN=ON \
+                -DSDL_ARMSVE2=OFF \
                 -DSDL_OPENGLES=ON \
                 -DSDL_OPENGL=OFF \
                 -DSDL_X11=OFF \
@@ -247,7 +250,8 @@ configure_tool() {
                 -DSDL_DBUS=OFF \
                 -DSDL_IBUS=OFF \
                 -DSDL_CAMERA=OFF \
-                -DSDL_HIDAPI=ON
+                -DSDL_HIDAPI=ON \
+                -DSDL_LIBUDEV=OFF # no udevd/netlink here; with libudev on, haptic init hard-fails and takes SDL_INIT_JOYSTICK|GAMEPAD|HAPTIC down with it
             ;;
     esac
 
@@ -357,15 +361,204 @@ build_all_tools() {
     configure_tool "SDL3"
     build_tool "SDL3"
     install_SDL3
+
+    # shaderc for ARMSX2 (PCSX2 pins; distro shaderc's glslang crashes)
+    build_shaderc
+
+    # Mesa (panfrost GL + panvk Vulkan) is no longer shipped - the libmali
+    # blob stack is the runtime GPU driver (see build-rootfs.sh). Kept as an
+    # opt-in fallback build: MIROKI_BUILD_MESA=1 make tools
+    if [ "${MIROKI_BUILD_MESA:-0}" = "1" ]; then
+        build_mesa
+    fi
+}
+
+build_shaderc() {
+    # PCSX2 dlopens libshaderc_shared.so.1 for Vulkan shader compilation and
+    # requires its pinned shaderc/glslang combo: Ubuntu's libshaderc null-derefs
+    # in glslang TSymbolTableLevel::clone() (thread pool allocator TLS) when
+    # compiling from the GS thread. Versions + patch come straight from the
+    # ARMSX2 tree (.github/workflows/scripts).
+    local SHADERC=2026.2
+    local GLSLANG=275822a6261ee689aadb1da5f09a0ec2f058685c
+    local SPIRVHEADERS=58006c901d1d5c37dece6b6610e9af87fa951375
+    local SPIRVTOOLS=6337eb62cadd7d124ac6789bf39c0f71148f0a73
+
+    local CACHE="$TOOLS_DIR/.shaderc-cache"
+    local SRC="$BUILD_DIR/shaderc-src"
+    local INSTALL="$BUILD_DIR/shaderc-install"
+    local PATCH="$REPO_ROOT/external/emulators/armsx2/.github/workflows/scripts/common/shaderc-changes.patch"
+
+    if [ -f "$INSTALL/lib/libshaderc_shared.so.1" ]; then
+        print_step "shaderc already built, skipping..."
+        return
+    fi
+
+    print_step "Building shaderc $SHADERC (PCSX2 pins)..."
+
+    mkdir -p "$CACHE"
+    local url file
+    for spec in \
+        "https://github.com/google/shaderc/archive/v$SHADERC/shaderc-$SHADERC.tar.gz" \
+        "https://github.com/KhronosGroup/glslang/archive/$GLSLANG/shaderc-glslang-$GLSLANG.tar.gz" \
+        "https://github.com/KhronosGroup/SPIRV-Headers/archive/$SPIRVHEADERS/shaderc-spirv-headers-$SPIRVHEADERS.tar.gz" \
+        "https://github.com/KhronosGroup/SPIRV-Tools/archive/$SPIRVTOOLS/shaderc-spirv-tools-$SPIRVTOOLS.tar.gz"; do
+        file="$CACHE/$(basename "$spec")"
+        [ -f "$file" ] || curl -L -o "$file" "$spec"
+    done
+
+    rm -rf "$SRC"
+    mkdir -p "$SRC"
+    tar xf "$CACHE/shaderc-$SHADERC.tar.gz" -C "$SRC" --strip-components=1
+    tar xf "$CACHE/shaderc-glslang-$GLSLANG.tar.gz" -C "$SRC/third_party"
+    mv "$SRC/third_party/glslang-$GLSLANG" "$SRC/third_party/glslang"
+    tar xf "$CACHE/shaderc-spirv-headers-$SPIRVHEADERS.tar.gz" -C "$SRC/third_party"
+    mv "$SRC/third_party/SPIRV-Headers-$SPIRVHEADERS" "$SRC/third_party/spirv-headers"
+    tar xf "$CACHE/shaderc-spirv-tools-$SPIRVTOOLS.tar.gz" -C "$SRC/third_party"
+    mv "$SRC/third_party/SPIRV-Tools-$SPIRVTOOLS" "$SRC/third_party/spirv-tools"
+
+    patch -d "$SRC" -p1 < "$PATCH"
+
+    # Plain -O2, no LTO: the toolchain file's -flto=auto Release flags
+    # miscompile glslang (ghost "'highp': only one precision qualifier"
+    # errors on valid shaders, observed on device)
+    cmake -S "$SRC" -B "$SRC/build" -G Ninja \
+        -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TC" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG" \
+        -DCMAKE_C_FLAGS_RELEASE="-O2 -DNDEBUG" \
+        -DCMAKE_INSTALL_PREFIX="$INSTALL" \
+        -DSHADERC_SKIP_TESTS=ON -DSHADERC_SKIP_EXAMPLES=ON \
+        -DSHADERC_SKIP_COPYRIGHT_CHECK=ON
+    cmake --build "$SRC/build" --parallel "$(nproc)"
+    cmake --install "$SRC/build"
+
+    "${CROSS_COMPILE}"strip --strip-unneeded "$INSTALL"/lib/libshaderc_shared.so.1 2>/dev/null || true
+
+    print_step "shaderc built!"
+}
+
+build_mesa() {
+    print_step "Building Mesa (panfrost + panvk)..."
+
+    local MESA_DIR="$TOOLS_DIR/mesa"
+    local MESA_BUILD="$MESA_DIR/build"
+    local MESA_INSTALL="$BUILD_DIR/mesa-install"
+    local MESA_PATCHES="$REPO_ROOT/system/patches/tools/mesa"
+
+    # Apply mimiki patches (sprd kmsro support)
+    if [ ! -f "$MESA_DIR/.patches_applied" ] && [ -d "$MESA_PATCHES" ]; then
+        cd "$MESA_DIR"
+        for patch in "$MESA_PATCHES"/*.patch; do
+            [ -f "$patch" ] || continue
+            print_step "  Applying $(basename "$patch")..."
+            git apply "$patch"
+        done
+        touch "$MESA_DIR/.patches_applied"
+        cd "$REPO_ROOT"
+    fi
+
+    # Mesa needs meson >= 1.4; prefer a pipx/user install over the distro one
+    local MESON=meson
+    if [ -x "$HOME/.local/bin/meson" ]; then
+        MESON="$HOME/.local/bin/meson"
+    fi
+
+    # Stage 00: native SPIRV-Tools library (Ubuntu ships no host dev package;
+    # mesa_clc links it). Small cmake build, cached in build/.
+    local SPV_SRC="$BUILD_DIR/spirv-tools-src"
+    local HOST_DEPS="$BUILD_DIR/mesa-host-deps"
+    if [ ! -f "$HOST_DEPS/usr/lib/pkgconfig/SPIRV-Tools.pc" ] && \
+       [ ! -f "$HOST_DEPS/usr/lib/x86_64-linux-gnu/pkgconfig/SPIRV-Tools.pc" ]; then
+        print_step "  Building native SPIRV-Tools..."
+        if [ ! -d "$SPV_SRC" ]; then
+            git clone --depth 1 https://github.com/KhronosGroup/SPIRV-Tools.git "$SPV_SRC"
+            git clone --depth 1 https://github.com/KhronosGroup/SPIRV-Headers.git "$SPV_SRC/external/spirv-headers"
+        fi
+        # Real prefix, not DESTDIR: the .pc must carry the staged path or
+        # meson strips the -L as a default system dir and the link fails
+        cmake -S "$SPV_SRC" -B "$SPV_SRC/build" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$HOST_DEPS/usr" \
+            -DSPIRV_SKIP_TESTS=ON -DSPIRV_SKIP_EXECUTABLES=ON > /dev/null
+        cmake --build "$SPV_SRC/build" -j"$(nproc)"
+        cmake --install "$SPV_SRC/build" > /dev/null
+    fi
+    local HOST_PKG_PATH="$HOST_DEPS/usr/lib/pkgconfig"
+    [ -d "$HOST_DEPS/usr/lib/x86_64-linux-gnu/pkgconfig" ] && \
+        HOST_PKG_PATH="$HOST_DEPS/usr/lib/x86_64-linux-gnu/pkgconfig:$HOST_PKG_PATH"
+
+    # Stage 0: native build of just the CLC tooling (mesa_clc/vtn_bindgen2).
+    # Panfrost's precompiled internal shaders need these at build time, and a
+    # cross build can't run target binaries, so they must be host tools.
+    local CLC_BUILD="$MESA_DIR/build-native-clc"
+    local CLC_INSTALL="$BUILD_DIR/mesa-clc-tools"
+    if [ ! -x "$CLC_INSTALL/usr/bin/mesa_clc" ] || \
+       [ ! -x "$CLC_INSTALL/usr/bin/panfrost_compile" ]; then
+        if [ ! -f "$CLC_BUILD/build.ninja" ]; then
+            # gallium-drivers=panfrost so panfrost_compile (the precomp
+            # compiler the cross build consumes) gets built and installed
+            PKG_CONFIG_PATH="$HOST_PKG_PATH:${PKG_CONFIG_PATH:-}" \
+            $MESON setup "$CLC_BUILD" "$MESA_DIR" \
+                --buildtype release \
+                --prefix /usr \
+                -Dplatforms= \
+                -Degl=disabled \
+                -Dgbm=disabled \
+                -Dglx=disabled \
+                -Dgles1=disabled \
+                -Dgles2=disabled \
+                -Dopengl=false \
+                -Dgallium-drivers=panfrost \
+                -Dvulkan-drivers= \
+                -Dtools= \
+                -Dmesa-clc=enabled \
+                -Dinstall-mesa-clc=true \
+                -Dprecomp-compiler=enabled \
+                -Dinstall-precomp-compiler=true
+        fi
+        ninja -C "$CLC_BUILD" -j"$(nproc)"
+        DESTDIR="$CLC_INSTALL" ninja -C "$CLC_BUILD" install
+    fi
+
+    # Stage 1: the actual cross build, consuming the host CLC tools
+    if [ ! -f "$MESA_BUILD/build.ninja" ]; then
+        PATH="$CLC_INSTALL/usr/bin:$PATH" $MESON setup "$MESA_BUILD" "$MESA_DIR" \
+            --cross-file "$CONFIG_DIR/meson-cross-aarch64.txt" \
+            --buildtype release \
+            --prefix /usr \
+            -Dplatforms= \
+            -Degl=enabled \
+            -Dgbm=enabled \
+            -Dglx=disabled \
+            -Dglvnd=disabled \
+            -Dgles1=disabled \
+            -Dgles2=enabled \
+            -Dopengl=true \
+            -Dgallium-drivers=panfrost \
+            -Dvulkan-drivers=panfrost \
+            -Dtools= \
+            -Dllvm=disabled \
+            -Dmesa-clc=system \
+            -Dprecomp-compiler=system \
+            -Dzstd=enabled \
+            -Dvalgrind=disabled \
+            -Dlibunwind=disabled
+    fi
+
+    PATH="$CLC_INSTALL/usr/bin:$PATH" ninja -C "$MESA_BUILD" -j"$(nproc)"
+    PATH="$CLC_INSTALL/usr/bin:$PATH" DESTDIR="$MESA_INSTALL" ninja -C "$MESA_BUILD" install
+
+    print_step "Mesa installed to $MESA_INSTALL!"
 }
 
 main() {
-    print_step "MIMIKI Tool Builder"
+    print_step "MIROKI Tool Builder"
 
     check_dependencies
     build_all_tools
 
-    print_step "MIMIKI Tool Building Completed!"
+    print_step "MIROKI Tool Building Completed!"
 }
 
 main "$@"

@@ -1,10 +1,17 @@
-# MIMIKI - System-wide profile
+# MIROKI - System-wide profile
 # /etc/profile
 
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin
-export HOME=/root
+export HOME=/mnt/games/data
 export PS1='\u@\h:\w\$ '
 export TERM=linux
 
-# GPU configuration
-export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/mali.json
+# Writable caches/configs on the games partition (rootfs is squashfs).
+# Emulators that honor XDG (flycast, ...) keep their configs here; rcS
+# seeds missing defaults from /usr/share/mimiki/configs
+export XDG_CACHE_HOME=/mnt/games/data/.cache
+export XDG_CONFIG_HOME=/mnt/games/data/.config
+
+# GPU configuration: ARM libmali blob (GLES + Vulkan via the mali ICD in
+# /usr/share/vulkan/icd.d; VK_KHR_display presentation works on this stack).
+export MALI_SCHED_RT_THREAD_PRIORITY=95

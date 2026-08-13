@@ -130,7 +130,7 @@ static volatile int g_running = 1;
 
 static char biospath[512] = "\0";
 static char cdpath[512]   = "\0";
-static char buppath[512]  = "/mnt/games/data/saves/stn_backup.bin";
+static char buppath[512]  = "/mnt/games/data/.local/share/yabasanshiro/stn_backup.bin";
 static char cartpath[512] = "\0";
 
 extern "C" void YuiErrorMsg(const char *string) {
@@ -275,10 +275,10 @@ int main(int argc, char *argv[]) {
     {
         PerPortReset();
         void *pad1 = PerPadAdd(&PORTDATA1);
-        PerSetKey(JOY_BTN(0, 13), PERPAD_UP,    pad1);
-        PerSetKey(JOY_BTN(0, 14), PERPAD_DOWN,  pad1);
-        PerSetKey(JOY_BTN(0, 15), PERPAD_LEFT,  pad1);
-        PerSetKey(JOY_BTN(0, 16), PERPAD_RIGHT, pad1);
+        PerSetKey(JOY_BTN(0, 12), PERPAD_UP,    pad1);
+        PerSetKey(JOY_BTN(0, 13), PERPAD_DOWN,  pad1);
+        PerSetKey(JOY_BTN(0, 14), PERPAD_LEFT,  pad1);
+        PerSetKey(JOY_BTN(0, 15), PERPAD_RIGHT, pad1);
         PerSetKey(JOY_BTN(0, 0),  PERPAD_A, pad1);
         PerSetKey(JOY_BTN(0, 1),  PERPAD_B, pad1);
         PerSetKey(JOY_BTN(0, 6),  PERPAD_C, pad1);
@@ -291,7 +291,7 @@ int main(int argc, char *argv[]) {
     }
 
     SDL_Joystick *joy0 = SDL_JoystickOpen(0);
-    int prev_l3 = 0, prev_r3 = 0;
+    int prev_select = 0, prev_tl = 0, prev_start = 0;
 
     SDL_Event event;
     while (g_running) {
@@ -301,20 +301,27 @@ int main(int argc, char *argv[]) {
         }
 
         if (joy0) {
-            int guide = SDL_JoystickGetButton(joy0, 10);
-            int l3    = SDL_JoystickGetButton(joy0, 11);
-            int r3    = SDL_JoystickGetButton(joy0, 12);
+            // MODE+THUMBR is the aggregator's dpad/analog toggle, so the
+            // hotkey chords follow the systemwide scheme instead:
+            // MODE+SELECT save, MODE+L1 load, MODE+START quit.
+            int guide  = SDL_JoystickGetButton(joy0, 10);
+            int sel    = SDL_JoystickGetButton(joy0, 8);
+            int tl     = SDL_JoystickGetButton(joy0, 4);
+            int start  = SDL_JoystickGetButton(joy0, 9);
 
-            if (guide && r3 && !prev_r3) {
+            if (guide && sel && !prev_select) {
                 YabSaveStateSlot("/mnt/games/data/states", 0);
                 fprintf(stderr, "YabaSanshiro: state saved\n");
             }
-            if (guide && l3 && !prev_l3) {
+            if (guide && tl && !prev_tl) {
                 YabLoadStateSlot("/mnt/games/data/states", 0);
                 fprintf(stderr, "YabaSanshiro: state loaded\n");
             }
-            prev_l3 = l3;
-            prev_r3 = r3;
+            if (guide && start && !prev_start)
+                g_running = 0;
+            prev_select = sel;
+            prev_tl     = tl;
+            prev_start  = start;
         }
 
         if (PERCore && PERCore->HandleEvents() == -1)

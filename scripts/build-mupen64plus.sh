@@ -1,5 +1,5 @@
 #!/bin/bash
-# MIMIKI - Mupen64plus Build Script
+# MIROKI - Mupen64plus Build Script
 set -e
 
 # Colors
@@ -22,7 +22,7 @@ export CROSS_COMPILE=aarch64-linux-gnu-
 CMAKE_TC="$REPO_ROOT/system/config/toolchain-aarch64-linux-gnu.cmake"
 HOST=aarch64-linux-gnu
 JOBS=$(nproc)
-COMPFLAGS="-Ofast -march=armv8-a+simd -mtune=cortex-a55 -flto=auto"
+COMPFLAGS="-O3 -mcpu=cortex-a75.cortex-a55 -flto=auto"
 
 # Component directories
 CORE_DIR="$M64P_DIR/core"
@@ -222,7 +222,7 @@ install_mupen64plus() {
 }
 
 main() {
-    echo -e "${GREEN}MIMIKI Mupen64plus Build${NC}"
+    echo -e "${GREEN}MIROKI Mupen64plus Build${NC}"
     echo ""
 
     setup_sdl2_environment
@@ -236,7 +236,7 @@ main() {
     install_mupen64plus
 
     echo ""
-    echo -e "${GREEN}MIMIKI Mupen64plus Build Complete!${NC}"
+    echo -e "${GREEN}MIROKI Mupen64plus Build Complete!${NC}"
     echo ""
     echo "Installation directory: $M64P_INSTALL"
     echo "  Core library:    build/emulators/lib/libmupen64plus.so.2.0.0"

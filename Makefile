@@ -1,4 +1,4 @@
-# MIMIKI - Minimal Miyoo Kiosk
+# MIROKI - Minimal Rotate Kiosk
 # Top-level Makefile
 
 .PHONY: all help tools boot launcher emulators rootfs build-all image flash clean clean-all
@@ -15,19 +15,19 @@ MSG_ERROR = @echo "\033[1;31m==>\033[0m \033[1m$(1)\033[0m"
 all: help
 
 help:
-	@echo "MIMIKI Make System"
+	@echo "MIROKI Make System"
 	@echo ""
 	@echo "Build targets:"
 	@echo "  make tools        - Build libraries and utilities"
 	@echo "  make boot         - Build boot essentials"
-	@echo "  make launcher     - Build MIMIKI SDL2 launcher"
+	@echo "  make launcher     - Build MIROKI ncurses launcher"
 	@echo "  make emulators    - Build all emulators"
 	@echo "  make rootfs       - Build minimal RootFS"
 	@echo "  make build-all    - Build all of the above"
 	@echo ""
-	@echo "Image targets (Needs Root):"
+	@echo "Image targets:"
 	@echo "  make image                  - Create bootable SD card image"
-	@echo "  make flash SDCARD=/dev/sdX  - Flash image to SD card"
+	@echo "  make flash SDCARD=/dev/sdX  - Flash image to SD card (needs root)"
 	@echo ""
 	@echo "Clean targets:"
 	@echo "  make clean        - Clean build directory"
@@ -68,8 +68,8 @@ endif
 ifndef SDCARD
 	$(error SDCARD device needs to be defined. Use 'make flash SDCARD=/dev/sdX' with root priveleges)
 endif
-ifeq ($(wildcard $(BUILD_DIR)/images/mimiki-sdcard.img),)
-	$(error No mimiki-sdcard.img found in './build/images/'. Run 'make image' first)
+ifeq ($(wildcard $(BUILD_DIR)/images/miroki-sdcard.img),)
+	$(error No miroki-sdcard.img found in './build/images/'. Run 'make image' first)
 endif
 	$(call MSG_WARNING,This will erase $(SDCARD)!)
 	$(call MSG_WARNING,All data on $(SDCARD) will be lost!)
@@ -77,7 +77,7 @@ endif
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
 		echo ""; \
 		echo "Flashing to $(SDCARD)..."; \
-		dd if=$$(ls -t $(BUILD_DIR)/images/mimiki-sdcard.img) \
+		dd if=$$(ls -t $(BUILD_DIR)/images/miroki-sdcard.img) \
 		        of=$(SDCARD) \
 		        bs=4M \
 		        status=progress \
@@ -99,7 +99,7 @@ clean-all: clean
 	$(call MSG_INFO,Cleaning base builds...)
 	@$(MAKE) -C external/base/u-boot mrproper || true
 	@$(MAKE) -C external/base/linux mrproper || true
-	@$(MAKE) -C external/base/mali-kbase/product/kernel/drivers/gpu/arm/midgard KDIR=$(realpath ./external/base/linux) clean || true
+	@$(MAKE) -C external/base/mali-kbase/product/kernel/drivers/gpu/arm/midgard KDIR=$(CURDIR)/external/base/linux clean 2>/dev/null || true
 	$(call MSG_INFO,Cleaning tool builds...)
 	@$(MAKE) -C external/tools/busybox clean 2>/dev/null || true
 	@rm -r external/tools/exfatprogs/build 2>/dev/null || true
@@ -111,6 +111,7 @@ clean-all: clean
 	$(call MSG_INFO,Cleaning Launcher build...)
 	@$(MAKE) -C system/launcher clean || true
 	@$(MAKE) -C system/aggregator clean || true
+	@$(MAKE) -C system/glinfo clean || true
 	$(call MSG_INFO,Cleaning Emulator builds...)
 # Some of these need APIDIR because ???? to clean, even if it's incorrect
 	@$(MAKE) -C external/emulators/mupen64plus/core/projects/unix clean || true

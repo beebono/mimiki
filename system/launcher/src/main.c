@@ -9,18 +9,29 @@
 
 // Layout using TER16x32 on the 720x720 panel (45 cols x 22 rows)
 #define MARGIN       1
-#define USABLE_COLS  43
+#define USABLE_COLS  41
 #define USABLE_ROWS  20
-#define HEADER_ROW   MARGIN
-#define FOOTER_ROW   (MARGIN + USABLE_ROWS)
+
+// Per-element nudges for the round-corner panel (positive = right/down)
+#define CONTENT_COL_SHIFT  2   // title + system/game lists
+#define CONTENT_ROW_SHIFT  2
+#define BATTERY_COL_SHIFT  -1
+#define BATTERY_ROW_SHIFT  1
+#define FOOTER_COL_SHIFT   2   // navigation help text
+#define FOOTER_ROW_SHIFT   -1
+
+#define HEADER_ROW   (MARGIN + CONTENT_ROW_SHIFT)
+#define FOOTER_ROW   (MARGIN + USABLE_ROWS + FOOTER_ROW_SHIFT)
 #define CONTENT_ROW  (HEADER_ROW + 2)
-#define BATTERY_COL  (MARGIN + USABLE_COLS - 7)
+#define BATTERY_ROW  (MARGIN - 1 + BATTERY_ROW_SHIFT)
+#define BATTERY_COL  (MARGIN + USABLE_COLS - 7 + BATTERY_COL_SHIFT)
 
 // Menu
 #define MAX_SYSTEMS 6
 #define MAX_GAMES 256
-#define GAMES_PER_PAGE 16
-#define GAME_NAME_MAX_CHARS 38
+// Fill whatever fits between the (shifted) list top and the footer
+#define GAMES_PER_PAGE (FOOTER_ROW - CONTENT_ROW - 1)
+#define GAME_NAME_MAX_CHARS 32
 #define BATTERY_READ_MS 1750
 
 typedef struct
@@ -51,18 +62,18 @@ static int scroll_offset = 0;
 static int last_scrolled_game = -1;
 
 static const char *n64_exts[] = {".z64", ".n64", ".v64", NULL};
+static const char *gc_exts[] = {".rvz", ".iso", ".gcz", NULL};
 static const char *stn_exts[] = {".chd", ".iso", ".cue", NULL};
 static const char *dc_exts[] = {".gdi", ".cdi", ".chd", NULL};
 static const char *ps1_exts[] = {".cue", ".chd", ".pbp", NULL};
-static const char *gc_exts[] = {".rvz", ".iso", ".gcz", NULL};
 static const char *ps2_exts[] = {".iso", ".chd", ".cso", NULL};
 
 static System systems[MAX_SYSTEMS] = {
     {"Nintendo 64", "n64", "mupen64plus", n64_exts, {}, 0},
+    {"GameCube", "gc", "dolphin-emu-nogui", gc_exts, {}, 0},
     {"Saturn", "stn", "yabasanshiro", stn_exts, {}, 0},
     {"Dreamcast", "dc", "flycast", dc_exts, {}, 0},
     {"PlayStation", "ps1", "pcsx", ps1_exts, {}, 0},
-    {"GameCube", "gc", "dolphin-emu-nogui", gc_exts, {}, 0},
     {"PlayStation 2", "ps2", "armsx2-sdl", ps2_exts, {}, 0}};
 
 enum {
@@ -94,6 +105,20 @@ static bool has_extension(const char *filename, const char **extensions)
             return true;
     }
     return false;
+}
+
+// Tell the input aggregator to change pad mode (SIGUSR1 = N64 C-button
+// shift, SIGUSR2 = defaults/dpad). Best-effort: without the daemon the pad
+// is raw and there is nothing to switch.
+static void signal_aggregator(int sig)
+{
+    FILE *f = fopen("/tmp/mimiki-inputd.pid", "r");
+    if (!f)
+        return;
+    int pid = 0;
+    if (fscanf(f, "%d", &pid) == 1 && pid > 1)
+        kill(pid, sig);
+    fclose(f);
 }
 
 static void set_cpu_governor(const char *cpu_gov)
@@ -291,11 +316,11 @@ static void render_system_menu(void)
     erase();
 
     // Title centered in usable area
-    const char *title = "MIMIKI";
-    int title_col = MARGIN + (USABLE_COLS - (int)strlen(title)) / 2;
+    const char *title = "MIROKI";
+    int title_col = CONTENT_COL_SHIFT + (USABLE_COLS - (int)strlen(title)) / 2;
     mvprintw(HEADER_ROW, title_col, "%s", title);
 
-    draw_battery(HEADER_ROW - 1, BATTERY_COL);
+    draw_battery(BATTERY_ROW, BATTERY_COL);
 
     // System list
     for (int i = 0; i < MAX_SYSTEMS; i++)
@@ -306,23 +331,23 @@ static void render_system_menu(void)
         if (selected)
         {
             attron(COLOR_PAIR(PAIR_SELECTED));
-            mvprintw(row, MARGIN + 1, ">");
+            mvprintw(row, MARGIN + CONTENT_COL_SHIFT + 1, ">");
         }
 
         int pair = selected ? PAIR_SELECTED : PAIR_DEFAULT;
         attron(COLOR_PAIR(pair));
-        mvprintw(row, MARGIN + 3, "%s", systems[i].name);
+        mvprintw(row, MARGIN + CONTENT_COL_SHIFT + 3, "%s", systems[i].name);
         attroff(COLOR_PAIR(pair));
 
         char count[32];
         snprintf(count, sizeof(count), "(%d games)", systems[i].game_count);
-        mvprintw(row, MARGIN + 26, "%s", count);
+        mvprintw(row, MARGIN + CONTENT_COL_SHIFT + 26, "%s", count);
 
         if (selected)
             attroff(COLOR_PAIR(PAIR_SELECTED));
     }
 
-    mvprintw(FOOTER_ROW, MARGIN + 2, "D-PAD: Navigate  A: Select");
+    mvprintw(FOOTER_ROW, MARGIN + FOOTER_COL_SHIFT + 2, "D-PAD: Navigate  A: Select");
 
     refresh();
 }
@@ -334,10 +359,10 @@ static void render_game_menu(void)
     System *sys = &systems[current_system];
 
     // Title centered
-    int title_col = MARGIN + (USABLE_COLS - (int)strlen(sys->name)) / 2;
+    int title_col = MARGIN + CONTENT_COL_SHIFT + (USABLE_COLS - (int)strlen(sys->name)) / 2;
     mvprintw(HEADER_ROW, title_col, "%s", sys->name);
 
-    draw_battery(HEADER_ROW - 1, BATTERY_COL);
+    draw_battery(BATTERY_ROW, BATTERY_COL);
 
     // Game list
     int start_idx = (current_game / GAMES_PER_PAGE) * GAMES_PER_PAGE;
@@ -372,12 +397,12 @@ static void render_game_menu(void)
         if (selected)
         {
             attron(COLOR_PAIR(PAIR_SELECTED));
-            mvprintw(row, MARGIN + 1, ">");
+            mvprintw(row, MARGIN + CONTENT_COL_SHIFT + 1, ">");
         }
 
         int pair = selected ? PAIR_SELECTED : PAIR_DEFAULT;
         attron(COLOR_PAIR(pair));
-        mvprintw(row, MARGIN + 3, "%s", display_name);
+        mvprintw(row, MARGIN + CONTENT_COL_SHIFT + 3, "%s", display_name);
         attroff(COLOR_PAIR(pair));
 
         if (selected)
@@ -389,12 +414,12 @@ static void render_game_menu(void)
     {
         int current_page = (current_game / GAMES_PER_PAGE) + 1;
         int total_pages = (sys->game_count + GAMES_PER_PAGE - 1) / GAMES_PER_PAGE;
-        mvprintw(FOOTER_ROW, MARGIN + 2, "PAGE %d/%d", current_page, total_pages);
-        mvprintw(FOOTER_ROW, MARGIN + 19, "A: Launch B: Back");
+        mvprintw(FOOTER_ROW, MARGIN + FOOTER_COL_SHIFT + 2, "PAGE %d/%d", current_page, total_pages);
+        mvprintw(FOOTER_ROW, MARGIN + FOOTER_COL_SHIFT + 19, "A: Launch B: Back");
     }
     else
     {
-        mvprintw(FOOTER_ROW, MARGIN + 2, "D-PAD: Navigate  A: Launch B: Back");
+        mvprintw(FOOTER_ROW, MARGIN + FOOTER_COL_SHIFT + 2, "D-PAD: Navigate  A: Launch B: Back");
     }
 
     refresh();
@@ -426,6 +451,11 @@ static void launch_game(System *sys, Game *game)
     set_cpu_governor(cpu_gov);
     set_gpu_governor(gpu_gov);
 
+    // N64 gets the aggregator's R2-shifted C-buttons; SIGUSR2 on exit (below)
+    // restores dpad navigation for everyone
+    if (strcmp(sys->short_name, "n64") == 0)
+        signal_aggregator(SIGUSR1);
+
     pid_t pid = fork();
     if (pid == 0)
     {
@@ -438,15 +468,22 @@ static void launch_game(System *sys, Game *game)
             close(log_fd);
         }
 
+        // init spawns us with a bare environment (/etc/profile is only for
+        // login shells), so give every emulator the writable homes here.
+        // HOME-based dotdirs (.pcsx, .yabasanshiro) land on the games
+        // partition; XDG users (flycast, mupen, armsx2) go to .config
+        setenv("HOME", "/mnt/games/data", 1);
+        setenv("XDG_CONFIG_HOME", "/mnt/games/data/.config", 1);
+        setenv("XDG_CACHE_HOME", "/mnt/games/data/.cache", 1);
+
         if (strcmp(sys->short_name, "n64") == 0)
         {
-            setenv("XDG_CACHE_HOME", "/mnt/games/data/.cache", 1);
             execl("/usr/bin/mupen64plus", sys->emulator, game->path, (char *)NULL);
         }
         else if (strcmp(sys->short_name, "stn") == 0)
         {
             execl("/usr/bin/yabasanshiro", sys->emulator,
-                "-b", "/mnt/games/data/saturn_bios.bin", "-i", game->path, (char *)NULL);
+                "-b", "/mnt/games/data/bios/saturn_bios.bin", "-i", game->path, (char *)NULL);
         }
         else if (strcmp(sys->short_name, "dc") == 0)
         {
@@ -459,11 +496,10 @@ static void launch_game(System *sys, Game *game)
         else if (strcmp(sys->short_name, "gc") == 0)
         {
             execl("/usr/bin/dolphin-emu-nogui", sys->emulator,
-                "-u", "/mnt/games/data/dolphin", "-e", game->path, (char *)NULL);
+                "-u", "/mnt/games/data/.config/dolphin", "-e", game->path, (char *)NULL);
         }
         else if (strcmp(sys->short_name, "ps2") == 0)
         {
-            setenv("XDG_CONFIG_HOME", "/mnt/games/data", 1);
             execl("/usr/bin/armsx2-sdl", sys->emulator, game->path, (char *)NULL);
         }
 
@@ -477,13 +513,30 @@ static void launch_game(System *sys, Game *game)
             InputEvents ev = {0};
             input_monitor_poll(&ev);
             if (ev.exit_emu || ev.shutdown) {
+                // Ask nicely, then escalate: some emulators (dolphin) wedge
+                // on SIGTERM and would keep the display and evdev grabbed
                 kill(pid, SIGTERM);
-                usleep(250000);
+                bool dead = false;
+                for (int t = 0; t < 20; t++) {  // up to 2s
+                    if (waitpid(pid, &status, WNOHANG) != 0) {
+                        dead = true;
+                        break;
+                    }
+                    usleep(100000);
+                }
+                if (!dead) {
+                    kill(pid, SIGKILL);
+                    waitpid(pid, &status, 0);
+                }
                 break;
             }
             usleep(50000);
         }
     }
+
+    // Emulator is gone: drop any N64 shift mode and force the pad back to
+    // dpad mode - the launcher only navigates by dpad
+    signal_aggregator(SIGUSR2);
 
     set_cpu_governor("powersave");
     set_gpu_governor("powersave");

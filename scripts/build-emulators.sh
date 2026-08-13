@@ -1,5 +1,5 @@
 #!/bin/bash
-# MIMIKI - Emulators Build Script
+# MIROKI - Emulators Build Script
 set -e
 
 # Colors
@@ -126,8 +126,14 @@ apply_patches() {
     for patch in "$PATCHES_DIR"/*.patch; do
         if [ -f "$patch" ]; then
             local patch_name=$(basename "$patch")
-            print_step "  Applying $patch_name..."
-            git apply "$patch"
+            # The marker file can go missing while the tree stays patched
+            # (live-debug edits, cleans); detect per patch instead of failing
+            if git apply --reverse --check "$patch" 2>/dev/null; then
+                print_step "  $patch_name already applied, skipping..."
+            else
+                print_step "  Applying $patch_name..."
+                git apply "$patch"
+            fi
         fi
     done
 
@@ -141,6 +147,8 @@ apply_all_patches() {
     apply_patches "yabasanshiro" "$EMU_DIR/yabasanshiro" "yabasanshiro"
     apply_patches "flycast" "$EMU_DIR/flycast" "flycast"
     apply_patches "pcsx-rearmed" "$EMU_DIR/pcsx-rearmed" "pcsx-rearmed"
+    # libpicofe is a nested submodule of pcsx-rearmed - patch it separately
+    apply_patches "libpicofe" "$EMU_DIR/pcsx-rearmed/frontend/libpicofe" "libpicofe"
     apply_patches "dolphin" "$EMU_DIR/dolphin" "dolphin"
     apply_patches "armsx2" "$EMU_DIR/armsx2" "armsx2"
 }
@@ -172,6 +180,7 @@ build_dolphin() {
         -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TC" -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX="$DOLPHIN_INSTALL" \
         -DENABLE_NOGUI=ON -DENABLE_QT=OFF \
+        -DSDL_LIBUDEV=OFF \
         -DENABLE_EGL=ON -DENABLE_X11=OFF -DENABLE_WAYLAND=OFF \
         -DENABLE_VULKAN=ON \
         -DENABLE_EVDEV=ON -DENABLE_SDL=ON \
@@ -214,16 +223,43 @@ build_armsx2() {
         exit 1
     fi
 
+    # plutovg/plutosvg have no distro packages; build the vendored 3rdparty
+    # copies into a staging prefix the main configure can find. Must use the
+    # same clang toolchain as ARMSX2 itself: static libs built by the GCC
+    # toolchain carry GCC LTO bitcode that lld cannot link.
+    local DEPS_INSTALL="$BUILD_DIR/armsx2-deps"
+    if [ ! -f "$DEPS_INSTALL/lib/libplutosvg.a" ]; then
+        for dep in plutovg plutosvg; do
+            print_step "  Building vendored $dep..."
+            cmake -S "$ARMSX2_DIR/3rdparty/$dep" -B "$ARMSX2_DIR/3rdparty/$dep/build" \
+                -DCMAKE_TOOLCHAIN_FILE="$REPO_ROOT/system/config/toolchain-aarch64-clang.cmake" \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_INSTALL_PREFIX="$DEPS_INSTALL" \
+                -DCMAKE_PREFIX_PATH="$DEPS_INSTALL" \
+                -DCMAKE_FIND_ROOT_PATH="$DEPS_INSTALL" \
+                -DBUILD_SHARED_LIBS=OFF \
+                -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+            cmake --build "$ARMSX2_DIR/3rdparty/$dep/build" -j"$JOBS"
+            cmake --install "$ARMSX2_DIR/3rdparty/$dep/build"
+        done
+    fi
+
     mkdir -p "$ARMSX2_BUILD"
     cd "$ARMSX2_BUILD"
 
     # SDL3/kmsdrm frontend: video via Vulkan VK_KHR_display (no compositor),
     # SDL3 for input/audio, Qt UI fully off.
+    # Built with clang: the ARM64 JIT needs __attribute__((preserve_most)),
+    # which GCC does not implement (vtlb.h hard-errors otherwise).
     cmake .. \
-        -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TC" -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_PREFIX_PATH="$SDL3_INSTALL/usr" \
+        -DCMAKE_TOOLCHAIN_FILE="$REPO_ROOT/system/config/toolchain-aarch64-clang.cmake" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_PREFIX_PATH="$SDL3_INSTALL/usr;$DEPS_INSTALL" \
+        -DCMAKE_FIND_ROOT_PATH="$SDL3_INSTALL/usr;$DEPS_INSTALL" \
         -DENABLE_SDL_FRONTEND=ON -DENABLE_QT_UI=OFF \
         -DENABLE_QT_DEBUGGER=OFF \
+        -DHOST_PAGE_SIZE=4096 -DHOST_CACHE_LINE_SIZE=64 \
+        -DSHADERC_LIBRARY=/usr/lib/aarch64-linux-gnu/libshaderc.so \
         -DUSE_VULKAN=ON -DUSE_OPENGL=ON \
         -DUSE_BACKTRACE=OFF \
         -DX11_API=OFF -DWAYLAND_API=OFF \
@@ -240,6 +276,7 @@ build_armsx2() {
 
     mkdir -p "$ARMSX2_INSTALL/bin"
     cp "$SDL_BIN" "$ARMSX2_INSTALL/bin/"
+    "${CROSS_COMPILE}"strip --strip-unneeded "$ARMSX2_INSTALL/bin/$(basename "$SDL_BIN")" 2>/dev/null || true
     # Resources (shaders, FullscreenUI assets) are required at runtime
     cp -r "$ARMSX2_BUILD/bin/resources" "$ARMSX2_INSTALL/"
 
@@ -320,7 +357,7 @@ build_pcsx() {
     cd "$PCSX_DIR"
 
     CROSS_COMPILE="$CROSS_COMPILE" \
-    CFLAGS="-Ofast -march=armv8-a+simd -mtune=cortex-a55 -flto=auto" LDFLAGS="-flto=auto" \
+    CFLAGS="-O3 -mcpu=cortex-a75.cortex-a55 -flto=auto" LDFLAGS="-flto=auto" \
     ./configure --dynarec=ari64 --gpu=neon --sound-drivers=sdl \
         --enable-neon --enable-threads --enable-dynamic 
 
@@ -340,7 +377,7 @@ build_pcsx() {
 }
 
 main() {
-    echo -e "${GREEN}MIMIKI Emulator Builds${NC}"
+    echo -e "${GREEN}MIROKI Emulator Builds${NC}"
     echo ""
 
     check_dependencies
@@ -356,7 +393,7 @@ main() {
     build_armsx2
 
     echo ""
-    echo -e "${GREEN}MIMIKI Emulator Builds Complete!${NC}"
+    echo -e "${GREEN}MIROKI Emulator Builds Complete!${NC}"
     echo ""
     echo "Installation directory: $EMU_INSTALL"
     echo "  N64:      $EMU_INSTALL/mupen64plus"

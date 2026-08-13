@@ -46,11 +46,14 @@ if(EXISTS "${SDL2_INSTALL}/usr/bin/sdl2-config")
     set(SDL2_CONFIG "${SDL2_INSTALL}/usr/bin/sdl2-config" CACHE FILEPATH "SDL2 config script")
 endif()
 
-set(CMAKE_C_FLAGS_RELEASE "-Ofast -DNDEBUG -flto=auto" CACHE STRING "C Release flags")
-set(CMAKE_CXX_FLAGS_RELEASE "-Ofast -DNDEBUG -flto=auto" CACHE STRING "C++ Release flags")
+# -O3 without -ffast-math: emulators emulate IEEE-754 hardware; fast-math's
+# NaN/denormal shortcuts cause real emulation bugs.
+set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG -flto=auto" CACHE STRING "C Release flags")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -flto=auto" CACHE STRING "C++ Release flags")
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv8-a+simd+dotprod -mtune=cortex-a55" CACHE STRING "C flags")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8-a+simd+dotprod -mtune=cortex-a55" CACHE STRING "C++ flags")
+# T618: v8.2 (inline LSE atomics) + balanced big.LITTLE scheduling for A75/A55
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mcpu=cortex-a75.cortex-a55" CACHE STRING "C flags")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mcpu=cortex-a75.cortex-a55" CACHE STRING "C++ flags")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -flto=auto" CACHE STRING "Executable linker flags")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -flto=auto" CACHE STRING "Shared linker flags")
 

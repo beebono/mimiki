@@ -1,5 +1,5 @@
 #!/bin/bash
-# MIMIKI - Rootfs Build Script
+# MIROKI - Rootfs Build Script
 set -e
 
 # Colors
@@ -77,6 +77,11 @@ populate_rootfs() {
 install_launcher() {
     print_step "Installing Launcher..."
 
+    if [ -f "$REPO_ROOT/system/glinfo/build/mimiki-glinfo" ]; then
+        cp "$REPO_ROOT/system/glinfo/build/mimiki-glinfo" "$ROOTFS_BUILD/usr/bin/"
+        chmod +x "$ROOTFS_BUILD/usr/bin/mimiki-glinfo"
+    fi
+
     if [ -f "$REPO_ROOT/system/aggregator/build/mimiki-inputd" ]; then
         cp "$REPO_ROOT/system/aggregator/build/mimiki-inputd" "$ROOTFS_BUILD/usr/bin/"
         chmod +x "$ROOTFS_BUILD/usr/bin/mimiki-inputd"
@@ -112,6 +117,8 @@ install_alsa() {
     if [ -f "$ALSA_BUILD/amixer/amixer" ]; then
         cp "$ALSA_BUILD/amixer/amixer" "$ROOTFS_BUILD/usr/bin/"
         cp "$ALSA_BUILD/alsactl/alsactl" "$ROOTFS_BUILD/usr/bin/" 2>/dev/null || true
+        # aplay primes the softvol control at boot (see rcS)
+        cp "$ALSA_BUILD/aplay/aplay" "$ROOTFS_BUILD/usr/bin/" 2>/dev/null || true
         print_step "ALSA utilities installed!"
     else
         print_warning "ALSA utilities not found! Run 'make tools' first."
@@ -148,10 +155,29 @@ install_libraries() {
         print_warning "ALSA config files not found at /usr/share/alsa"
     fi
 
-    # Additional libraries (GPU)
+    # Additional libraries (GPU): the ARM libmali blob stack (GLES + Vulkan,
+    # both with working direct-KMS presentation - VK_KHR_display enumerates
+    # the panel on this ICD, unlike panvk). The wrapper shims from lib/mali/
+    # are installed AT the canonical sonames (libgbm.so.1, libEGL.so.1, ...)
+    # so nothing can resolve to a mesa copy; they dispatch into libmali via
+    # libmali-hook. Install BEFORE resolve_library_closure so the resolver
+    # sees these sonames as present and never pulls mesa from the sysroot.
+    local BLOBS="$REPO_ROOT/system/prebuilts/libmali-blobs"
     mkdir -p "$ROOTFS_BUILD/usr/share/vulkan/icd.d"
-    cp -a "$REPO_ROOT/system/prebuilts/libmali-blobs"/*.so* "$ROOTFS_BUILD/usr/lib/" || print_warning "Mali blobs not found"
-    cp -a "$REPO_ROOT/system/prebuilts/libmali-blobs"/icd.d/*.json "$ROOTFS_BUILD/usr/share/vulkan/icd.d/" || print_warning "Vulkan icd not found"
+    # Core blob + dispatch lib + hook (symlink chains preserved with -a)
+    cp -a "$BLOBS/lib"/libmali*.so* "$ROOTFS_BUILD/usr/lib/"
+    cp -a "$BLOBS/lib"/libMaliVulkan.so* "$ROOTFS_BUILD/usr/lib/"
+    # Wrapper shims at canonical GL/GBM sonames
+    cp -a "$BLOBS/lib/mali"/*.so* "$ROOTFS_BUILD/usr/lib/"
+    # Vulkan loader + mali ICD
+    cp -a "$BLOBS/lib"/libvulkan.so* "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "Vulkan loader not found"
+    cp "$BLOBS/icd.d/mali.json" "$ROOTFS_BUILD/usr/share/vulkan/icd.d/"
+    # ARM WSI layer (implicit): the ICD alone reports 0 displays - this layer
+    # provides VK_KHR_display enumeration + VK_KHR_swapchain over DRM/KMS,
+    # allocating scanout buffers from /dev/dma_heap/linux,cma
+    mkdir -p "$ROOTFS_BUILD/usr/share/vulkan/implicit_layer.d"
+    cp -a "$BLOBS/lib"/libVkLayer_window_system_integration.so "$ROOTFS_BUILD/usr/lib/"
+    cp "$BLOBS/implicit_layer.d"/*.json "$ROOTFS_BUILD/usr/share/vulkan/implicit_layer.d/"
     cp -a "$SYSROOT"/libdrm.so* "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libdrm not found"
 
     # Kernel modules loaded by rcS: mali_kbase (libmali is its userspace half)
@@ -176,7 +202,9 @@ install_libraries() {
     cp -L "$SYSROOT/libz.so.1" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libz not found"
     # yabasanshiro
     cp -L "$SYSROOT/libglut.so.3.12" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libglut not found"
-    cp -L "$SYSROOT/libshaderc.so.1" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libshaderc not found"
+    # PCSX2-pinned shaderc build (Ubuntu's crashes in glslang from the GS
+    # thread); PCSX2 dlopens libshaderc_shared.so.1 by preference
+    cp -a "$BUILD_DIR/shaderc-install/lib"/libshaderc_shared.so* "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "shaderc (PCSX2 pin) not built - run 'make tools'"
     # flycast
     cp -L "$SYSROOT/libgomp.so.1" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libgomp not found"
     cp -L "$SYSROOT/libudev.so.1" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libudev not found"
@@ -184,8 +212,16 @@ install_libraries() {
     cp -L "$SYSROOT/libmvec.so.1" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "libmvec not found"    
     # pcsx
     cp -L "$BUILD_DIR/sdl12-install/usr/lib/libSDL-1.2.so.0" "$ROOTFS_BUILD/usr/lib" 2>/dev/null || print_warning "sdl12-compat not found"
-    # armsx2 (SDL3 for input/audio)
+    # armsx2 (SDL3 for input/audio; shaderc dlopen'd at runtime as libshaderc.so.1)
     cp -a "$BUILD_DIR"/sdl3-install/usr/lib/libSDL3.so* "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "SDL3 not found"
+    for lib in libdbus-1.so.3 libcurl.so.4 libwebp.so.7 libfreetype.so.6 \
+               liblz4.so.1 libjpeg.so.8 libzstd.so.1; do
+        cp -L "$SYSROOT/$lib" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "$lib not found"
+    done
+    # dolphin
+    for lib in libevdev.so.2 libbz2.so.1.0; do
+        cp -L "$SYSROOT/$lib" "$ROOTFS_BUILD/usr/lib/" 2>/dev/null || print_warning "$lib not found"
+    done
     # ppsspp covered by previous libraries
 
     print_step "Libraries installed!"
@@ -197,10 +233,13 @@ install_emulators() {
     if [ -d "$BUILD_DIR/emulators/mupen64plus" ]; then
         cp -a "$BUILD_DIR/emulators/mupen64plus/lib/libmupen64plus.so.2" \
             "$ROOTFS_BUILD/usr/lib/"
+        # Binaries/data stay in the squashfs; the seeded config on the games
+        # partition points PluginDir/SharedDataPath here
+        mkdir -p "$ROOTFS_BUILD/usr/lib/mupen64plus" "$ROOTFS_BUILD/usr/share/mupen64plus"
         cp -a "$BUILD_DIR/emulators/mupen64plus/lib/plugins"/* \
-            "$ROOTFS_BUILD/root/.config/mupen64plus/plugins/"
+            "$ROOTFS_BUILD/usr/lib/mupen64plus/"
         cp -a "$BUILD_DIR/emulators/mupen64plus/GLideN64.custom.ini" \
-            "$ROOTFS_BUILD/root/.config/mupen64plus/data/"
+            "$ROOTFS_BUILD/usr/share/mupen64plus/"
         cp -a "$BUILD_DIR/emulators/mupen64plus/bin/mupen64plus" \
             "$ROOTFS_BUILD/usr/bin/"
 
@@ -222,6 +261,11 @@ install_emulators() {
     fi
 
     if [ -d "$BUILD_DIR/emulators/pcsx" ]; then
+        # Menu skin: pcsx looks in <exe-dir>/skin; without it the menu (and
+        # its "no BIOS" messages) render invisible
+        mkdir -p "$ROOTFS_BUILD/usr/bin/skin"
+        cp -a "$REPO_ROOT/external/emulators/pcsx-rearmed/frontend/320240/skin"/* \
+            "$ROOTFS_BUILD/usr/bin/skin/"
         cp -a "$BUILD_DIR/emulators/pcsx/bin/pcsx" \
             "$ROOTFS_BUILD/usr/bin/"
 
@@ -252,6 +296,46 @@ install_emulators() {
     fi
 
     print_step "Emulators installed!"
+}
+
+resolve_library_closure() {
+    # Walk every ELF in the rootfs, copy any missing NEEDED library from the
+    # sysroot, and repeat until stable. Hand-listing misses transitive deps
+    # (libcurl -> nghttp2/idn2/ssl, libpcap, ...).
+    print_step "Resolving shared library closure..."
+
+    local readelf="${CROSS_COMPILE:-aarch64-linux-gnu-}readelf"
+    local pass=0 copied=1
+    while [ $copied -gt 0 ] && [ $pass -lt 10 ]; do
+        copied=0
+        pass=$((pass + 1))
+        local needed
+        needed=$(find "$ROOTFS_BUILD/usr/bin" "$ROOTFS_BUILD/usr/lib" \
+                      "$ROOTFS_BUILD/lib" "$ROOTFS_BUILD/usr/share/armsx2" \
+                      -type f 2>/dev/null | while read -r f; do
+                     $readelf -d "$f" 2>/dev/null | grep NEEDED
+                 done | sed 's/.*\[\(.*\)\]/\1/' | sort -u)
+
+        for lib in $needed; do
+            # Already present anywhere in the rootfs?
+            if [ -e "$ROOTFS_BUILD/usr/lib/$lib" ] || [ -e "$ROOTFS_BUILD/lib/$lib" ]; then
+                continue
+            fi
+            if [ -e "$SYSROOT/$lib" ]; then
+                cp -L "$SYSROOT/$lib" "$ROOTFS_BUILD/usr/lib/"
+                print_step "  + $lib"
+                copied=$((copied + 1))
+            elif [ -e "$SYSROOT_OLD/lib/$lib" ]; then
+                cp -L "$SYSROOT_OLD/lib/$lib" "$ROOTFS_BUILD/usr/lib/"
+                print_step "  + $lib"
+                copied=$((copied + 1))
+            else
+                print_warning "  cannot resolve $lib (not in sysroot)"
+            fi
+        done
+    done
+
+    print_step "Library closure resolved (${pass} passes)!"
 }
 
 set_permissions() {
@@ -297,7 +381,7 @@ create_squashfs() {
 }
 
 main() {
-    print_step "MIMIKI Rootfs Build"
+    print_step "MIROKI Rootfs Build"
 
     check_dependencies
     populate_rootfs
@@ -306,11 +390,12 @@ main() {
     install_alsa
     install_launcher
     install_emulators
+    resolve_library_closure
     set_permissions
     finalize_rootfs
     create_squashfs
 
-    print_step "MIMIKI Rootfs Build Complete!"
+    print_step "MIROKI Rootfs Build Complete!"
     echo ""
     echo "Rootfs directory:"
     echo "  $ROOTFS_FINAL"

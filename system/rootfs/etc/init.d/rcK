@@ -1,5 +1,5 @@
 #!/bin/sh
-# MIMIKI - System shutdown script
+# MIROKI - System shutdown script
 
 # Sync and unmount games so things don't break
 sync

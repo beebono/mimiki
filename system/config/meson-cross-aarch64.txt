@@ -1,0 +1,21 @@
+# Meson cross file for aarch64 (Ubuntu multiarch sysroot)
+
+[binaries]
+c = 'aarch64-linux-gnu-gcc'
+cpp = 'aarch64-linux-gnu-g++'
+ar = 'aarch64-linux-gnu-ar'
+strip = 'aarch64-linux-gnu-strip'
+pkg-config = '/usr/bin/pkg-config'
+
+[host_machine]
+system = 'linux'
+cpu_family = 'aarch64'
+cpu = 'cortex-a75'
+endian = 'little'
+
+[built-in options]
+c_args = ['-mcpu=cortex-a75.cortex-a55', '-O3']
+cpp_args = ['-mcpu=cortex-a75.cortex-a55', '-O3']
+
+[properties]
+pkg_config_libdir = '/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig'

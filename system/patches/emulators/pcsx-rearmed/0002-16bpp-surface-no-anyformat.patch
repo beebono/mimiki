@@ -1,0 +1,16 @@
+diff --git a/frontend/plat_sdl.c b/frontend/plat_sdl.c
+index ca0bdf74..a0810ed6 100644
+--- a/frontend/plat_sdl.c
++++ b/frontend/plat_sdl.c
+@@ -570,6 +570,11 @@ static void change_mode(int w, int h)
+       plat_target.vout_fullscreen != vout_fullscreen_old)
+   {
+     Uint32 flags = plat_sdl_screen->flags;
++    // The initial menu SetVideoMode(w,h,0,..) sets SDL_ANYFORMAT; inheriting
++    // it here makes the 16bpp request return a surface whose format claims
++    // the display's native 32bpp while the pixels stay 16bpp-pitched
++    // (sdl12-compat), garbling the game image. Force honest 16bpp.
++    flags &= ~SDL_ANYFORMAT;
+     if (plat_target.vout_fullscreen)
+       flags |= SDL_FULLSCREEN;
+     else {
